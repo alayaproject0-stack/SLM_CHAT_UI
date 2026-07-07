@@ -1,0 +1,1561 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Colab GGUF Chat Client with Web Search</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+    <!-- Marked.js (Markdown Parser) -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <!-- PDF.js (PDF Text Extractor) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
+    <!-- Prism.js (Syntax Highlighting) -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-javascript.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-css.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-json.min.js"></script>
+    <style>
+        :root {
+            --bg-gradient-start: #0a0b10;
+            --bg-gradient-end: #121520;
+            --panel-bg: rgba(25, 28, 41, 0.65);
+            --panel-border: rgba(255, 255, 255, 0.08);
+            --accent-color: #4f46e5;
+            --accent-glow: rgba(79, 70, 229, 0.4);
+            --accent-gradient: linear-gradient(135deg, #6366f1, #4f46e5);
+            --text-main: #f3f4f6;
+            --text-muted: #9ca3af;
+            --user-msg-bg: linear-gradient(135deg, #312e81, #1e1b4b);
+            --assistant-msg-bg: rgba(30, 41, 59, 0.5);
+            --input-bg: rgba(15, 17, 26, 0.8);
+            --success-color: #10b981;
+            --danger-color: #ef4444;
+            --search-bg: rgba(59, 130, 246, 0.1);
+            --search-border: rgba(59, 130, 246, 0.3);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: linear-gradient(135deg, var(--bg-gradient-start), var(--bg-gradient-end));
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            overflow: hidden;
+        }
+
+        /* アプリ全体のレイアウト */
+        #app-container {
+            display: flex;
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+        }
+
+        /* サイドバー設定パネル */
+        #sidebar {
+            width: 320px;
+            background: rgba(10, 11, 18, 0.85);
+            border-right: 1px solid var(--panel-border);
+            display: flex;
+            flex-direction: column;
+            padding: 24px;
+            z-index: 10;
+            backdrop-filter: blur(20px);
+            transition: all 0.3s ease;
+        }
+
+        h1 {
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.5rem;
+            font-weight: 700;
+            background: linear-gradient(to right, #a5b4fc, #818cf8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 24px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .settings-group {
+            margin-bottom: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        label {
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        input, select, textarea {
+            width: 100%;
+            background: var(--input-bg);
+            border: 1px solid var(--panel-border);
+            border-radius: 8px;
+            padding: 12px;
+            color: var(--text-main);
+            font-family: inherit;
+            font-size: 0.9rem;
+            transition: all 0.2s ease;
+        }
+
+        input:focus, select:focus, textarea:focus {
+            outline: none;
+            border-color: var(--accent-color);
+            box-shadow: 0 0 10px var(--accent-glow);
+        }
+
+        /* トグルスイッチスタイル */
+        .switch-container {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--panel-border);
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .switch-label {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--text-main);
+        }
+
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 44px;
+            height: 24px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(255, 255, 255, 0.1);
+            transition: .3s;
+            border-radius: 24px;
+            border: 1px solid var(--panel-border);
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 16px;
+            width: 16px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .3s;
+            border-radius: 50%;
+        }
+
+        input:checked + .slider {
+            background: var(--accent-gradient);
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(20px);
+        }
+
+        .btn {
+            background: var(--accent-gradient);
+            border: none;
+            border-radius: 8px;
+            color: white;
+            padding: 12px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 12px rgba(79, 70, 229, 0.2);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px var(--accent-glow);
+            filter: brightness(1.1);
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--panel-border);
+            box-shadow: none;
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.1);
+            box-shadow: none;
+        }
+
+        /* 接続ステータスインジケータ */
+        #status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.85rem;
+            padding: 8px 12px;
+            border-radius: 6px;
+            margin-top: auto;
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--panel-border);
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--danger-color);
+            box-shadow: 0 0 8px var(--danger-color);
+            transition: all 0.3s ease;
+        }
+
+        .status-connected .status-dot {
+            background: var(--success-color);
+            box-shadow: 0 0 8px var(--success-color);
+        }
+
+        /* メインチャットエリア */
+        #chat-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            position: relative;
+            background: transparent;
+        }
+
+        #chat-header {
+            height: 70px;
+            border-bottom: 1px solid var(--panel-border);
+            display: flex;
+            align-items: center;
+            padding: 0 32px;
+            background: rgba(10, 11, 18, 0.4);
+            backdrop-filter: blur(10px);
+        }
+
+        .model-badge {
+            background: rgba(79, 70, 229, 0.15);
+            border: 1px solid rgba(79, 70, 229, 0.3);
+            border-radius: 20px;
+            padding: 6px 14px;
+            font-size: 0.8rem;
+            font-weight: 500;
+            color: #a5b4fc;
+        }
+
+        /* メッセージリスト */
+        #message-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 32px;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+        }
+
+        .message-wrapper {
+            display: flex;
+            width: 100%;
+            flex-direction: column;
+            gap: 10px;
+            animation: fadeIn 0.3s ease forwards;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .message {
+            max-width: 85%;
+            padding: 16px 20px;
+            border-radius: 16px;
+            line-height: 1.6;
+            font-size: 0.95rem;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+            border: 1px solid var(--panel-border);
+        }
+
+        .message-user {
+            margin-left: auto;
+            background: var(--user-msg-bg);
+            border-bottom-right-radius: 4px;
+        }
+
+        .message-assistant {
+            margin-right: auto;
+            background: var(--assistant-msg-bg);
+            border-bottom-left-radius: 4px;
+            backdrop-filter: blur(5px);
+        }
+
+        /* 検索UIの演出 */
+        .search-status {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: var(--search-bg);
+            border: 1px solid var(--search-border);
+            padding: 12px 18px;
+            border-radius: 12px;
+            font-size: 0.85rem;
+            color: #60a5fa;
+            width: fit-content;
+            margin-right: auto;
+            animation: fadeIn 0.2s ease;
+        }
+
+        .search-status svg {
+            width: 16px;
+            height: 16px;
+            animation: spin 2s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* 検索結果アコーディオン */
+        .search-results-panel {
+            background: rgba(30, 41, 59, 0.3);
+            border: 1px solid var(--panel-border);
+            border-radius: 12px;
+            padding: 12px 16px;
+            margin-bottom: 12px;
+            font-size: 0.85rem;
+            max-width: 85%;
+            margin-right: auto;
+        }
+
+        .search-results-title {
+            font-weight: 600;
+            color: #93c5fd;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .search-results-content {
+            margin-top: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            border-top: 1px solid rgba(255,255,255,0.05);
+            padding-top: 10px;
+        }
+
+        .search-item {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .search-item-title {
+            font-weight: 500;
+            color: var(--text-main);
+            text-decoration: none;
+        }
+
+        .search-item-title:hover {
+            color: #60a5fa;
+            text-decoration: underline;
+        }
+
+        .search-item-snippet {
+            color: var(--text-muted);
+            font-size: 0.8rem;
+        }
+
+        /* Markdown スタイル */
+        .message-assistant p {
+            margin-bottom: 12px;
+        }
+        .message-assistant p:last-child {
+            margin-bottom: 0;
+        }
+
+        .message-assistant pre {
+            background: #111827 !important;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            padding: 16px;
+            margin: 14px 0;
+            overflow-x: auto;
+        }
+
+        .message-assistant code {
+            font-family: 'Fira Code', Consolas, Monaco, monospace;
+            font-size: 0.85rem;
+            background: rgba(255, 255, 255, 0.08);
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+
+        .message-assistant pre code {
+            background: transparent;
+            padding: 0;
+            border-radius: 0;
+        }
+
+        /* 入力エリア */
+        #input-container {
+            padding: 24px 32px 32px 32px;
+            background: linear-gradient(to top, rgba(10, 11, 18, 0.8), transparent);
+        }
+
+        .input-box-wrapper {
+            position: relative;
+            background: var(--panel-bg);
+            border: 1px solid var(--panel-border);
+            border-radius: 16px;
+            padding: 8px;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(10px);
+            transition: border-color 0.2s ease;
+        }
+
+        .input-box-wrapper:focus-within {
+            border-color: var(--accent-color);
+            box-shadow: 0 8px 32px rgba(79, 70, 229, 0.15);
+        }
+
+        #chat-input {
+            width: 100%;
+            background: transparent;
+            border: none;
+            color: var(--text-main);
+            font-family: inherit;
+            font-size: 1rem;
+            padding: 12px;
+            resize: none;
+            height: 60px;
+            max-height: 200px;
+        }
+
+        #chat-input:focus {
+            outline: none;
+            box-shadow: none;
+        }
+
+        .input-footer {
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            padding: 4px 8px;
+        }
+
+        .send-btn {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: var(--accent-gradient);
+            border: none;
+            color: white;
+            cursor: pointer;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
+        }
+
+        .send-btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 4px 16px var(--accent-glow);
+        }
+
+        .send-btn svg {
+            width: 18px;
+            height: 18px;
+            fill: currentColor;
+            transform: rotate(45deg) translate(-1px, 1px);
+        }
+
+        /* スクロールバー */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.25);
+        }
+    </style>
+</head>
+<body>
+    <div id="app-container">
+        <!-- サイドバー -->
+        <aside id="sidebar">
+            <h1>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #818cf8;"><path d="M12 2a10 10 0 0 1 7.54 16.59c-.45.52-.7 1.2-.7 1.91V22h-13.68v-1.5c0-.71-.25-1.39-.7-1.9A10 10 0 0 1 12 2z"></path><path d="M9 10h6"></path><path d="M9 14h6"></path></svg>
+                Colab Chat UI
+            </h1>
+
+            <div class="settings-group">
+                <label for="api-url">Cloudflare API URL</label>
+                <input type="text" id="api-url" placeholder="https://xxxx.trycloudflare.com" value="">
+            </div>
+
+            <div class="settings-group">
+                <label for="model-select">使用モデル</label>
+                <select id="model-select">
+                    <option value="">URL入力後に取得されます</option>
+                </select>
+            </div>
+
+            <!-- Web検索スイッチ -->
+            <div class="switch-container">
+                <span class="switch-label">🔍 Web検索機能 (RAG)</span>
+                <label class="switch">
+                    <input type="checkbox" id="web-search-toggle">
+                    <span class="slider"></span>
+                </label>
+            </div>
+
+            <!-- 過去ログRAGスイッチ -->
+            <div class="switch-container">
+                <span class="switch-label">📜 過去会話RAG</span>
+                <label class="switch">
+                    <input type="checkbox" id="history-rag-toggle">
+                    <span class="slider"></span>
+                </label>
+            </div>
+
+            <div class="settings-group">
+                <label for="system-prompt">システムプロンプト</label>
+                <textarea id="system-prompt" rows="5" placeholder="あなたは優秀なAIアシスタントです。">あなたは親切で優秀なAIアシスタントです。リモートサーバー上でシェルコマンドを実行したい場合は、`&lt;execute_command&gt;コマンド&lt;/execute_command&gt;` の形式で出力してください。実行結果はシステムから自動的に差し戻されるので、それを元に回答を続けてください。</textarea>
+            </div>
+
+            <div class="settings-group" style="flex-direction: row; gap: 10px;">
+                <div style="flex: 1;">
+                    <label for="temperature">Temp</label>
+                    <input type="number" id="temperature" value="0.5" step="0.1" min="0" max="2">
+                </div>
+                <div style="flex: 1;">
+                    <label for="max-tokens">Max Tokens</label>
+                    <input type="number" id="max-tokens" value="2048" step="128">
+                </div>
+            </div>
+
+            <button class="btn btn-secondary" id="clear-btn" style="margin-top: 10px;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                会話履歴をクリア
+            </button>
+
+            <!-- ステータス -->
+            <div id="status-indicator">
+                <div class="status-dot"></div>
+                <span id="status-text">未接続</span>
+            </div>
+        </aside>
+
+        <!-- メインチャットエリア -->
+        <main id="chat-area">
+            <header id="chat-header">
+                <span class="model-badge" id="header-model-name">モデル未選択</span>
+                <div class="tab-container" style="display: flex; gap: 10px; margin-left: auto;">
+                    <button class="tab-btn active" id="tab-chat-btn" style="background: transparent; border: none; color: var(--text-main); font-weight: 600; font-size: 0.95rem; cursor: pointer; padding: 6px 12px; border-bottom: 2px solid var(--accent-color); transition: all 0.2s; outline: none;">💬 チャット</button>
+                    <button class="tab-btn" id="tab-term-btn" style="background: transparent; border: none; color: var(--text-muted); font-weight: 500; font-size: 0.95rem; cursor: pointer; padding: 6px 12px; border-bottom: 2px solid transparent; transition: all 0.2s; outline: none;">🐚 ターミナル</button>
+                </div>
+            </header>
+
+            <!-- チャットパネル -->
+            <div id="chat-panel" style="display: flex; flex-direction: column; flex: 1; height: calc(100% - 70px); min-height: 0;">
+                <!-- メッセージリスト -->
+                <div id="message-list" style="flex: 1; overflow-y: auto; padding: 32px; display: flex; flex-direction: column; gap: 24px;">
+                    <div class="message-wrapper">
+                        <div class="message message-assistant">
+                            こんにちは！接続URLを入力して、AIとの会話を開始してください。<br>
+                            左側の<b>「Web検索機能」</b>をONにすると、自動的にWebから最新の情報を検索して踏まえた上で回答できるようになります。
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 入力エリア -->
+                <div id="input-container">
+                    <div class="input-box-wrapper" style="position: relative; display: flex; flex-direction: column; background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: 12px; overflow: hidden;">
+                        <!-- 添付ファイルのプレビューコンテナ -->
+                        <div id="preview-container" style="display: none; flex-wrap: wrap; gap: 8px; padding: 8px 12px; background: rgba(0,0,0,0.15); border-bottom: 1px solid rgba(255,255,255,0.05); max-height: 120px; overflow-y: auto;"></div>
+                        
+                        <textarea id="chat-input" placeholder="メッセージを入力... (Ctrl + Enterで送信) またはファイルをドラッグ＆ドロップ" style="border: none; background: transparent; padding: 12px; resize: none; min-height: 60px; color: var(--text-main); font-size: 0.95rem; line-height: 1.5; outline: none;"></textarea>
+                        <div class="input-footer" style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: rgba(0,0,0,0.05);">
+                            <!-- クリップ（添付）ボタン -->
+                            <button id="attach-btn" type="button" style="background: none; border: none; color: var(--text-muted); cursor: pointer; display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 50%; transition: background 0.2s, color 0.2s;">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path>
+                                </svg>
+                            </button>
+                            <input type="file" id="file-input" style="display: none;" multiple accept="image/*,text/*,.pdf,.csv">
+                            
+                            <button class="send-btn" id="send-btn">
+                                <svg viewBox="0 0 24 24">
+                                    <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ターミナルパネル -->
+            <div id="terminal-panel" style="display: none; flex-direction: column; flex: 1; height: calc(100% - 70px); padding: 32px; box-sizing: border-box; overflow-y: auto; min-height: 0;">
+                <div style="background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: 16px; padding: 24px; display: flex; flex-direction: column; gap: 20px; height: 100%; box-sizing: border-box; backdrop-filter: blur(10px);">
+                    <h2 style="font-family: 'Outfit', sans-serif; font-size: 1.25rem; font-weight: 600; color: #a5b4fc; display: flex; align-items: center; gap: 8px;">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
+                        リモートシェル実行
+                    </h2>
+                    
+                    <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
+                        <span style="font-size: 0.8rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase;">クイックコマンド:</span>
+                        <button class="btn btn-secondary" onclick="runQuickCommand('nvidia-smi')" style="padding: 6px 12px; font-size: 0.8rem; border-radius: 6px;">nvidia-smi (GPU)</button>
+                        <button class="btn btn-secondary" onclick="runQuickCommand('ps aux | grep -E \'server.py|llama\'')" style="padding: 6px 12px; font-size: 0.8rem; border-radius: 6px;">ps aux (プロセス)</button>
+                        <button class="btn btn-secondary" onclick="runQuickCommand('df -h')" style="padding: 6px 12px; font-size: 0.8rem; border-radius: 6px;">df -h (ディスク)</button>
+                        <button class="btn btn-secondary" onclick="runQuickCommand('free -m')" style="padding: 6px 12px; font-size: 0.8rem; border-radius: 6px;">free -m (メモリ)</button>
+                        <button class="btn btn-secondary" onclick="runQuickCommand('ls -la')" style="padding: 6px 12px; font-size: 0.8rem; border-radius: 6px;">ls -la (ファイル)</button>
+                    </div>
+
+                    <div style="display: flex; gap: 10px;">
+                        <input type="text" id="terminal-input" placeholder="実行したいコマンドを入力してください... (例: pwd)" style="flex: 1;">
+                        <button class="btn" id="terminal-run-btn" style="padding: 0 20px;">実行</button>
+                    </div>
+
+                    <div id="terminal-output" style="flex: 1; background: #07080d; border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; padding: 16px; font-family: 'Fira Code', monospace; font-size: 0.85rem; color: #a3e635; white-space: pre-wrap; overflow-y: auto; box-shadow: inset 0 2px 8px rgba(0,0,0,0.8); line-height: 1.5;">コマンド実行結果がここに表示されます...</div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // 設定項目
+        const apiUrlInput = document.getElementById('api-url');
+        const modelSelect = document.getElementById('model-select');
+        const searchToggle = document.getElementById('web-search-toggle');
+        const historyRagToggle = document.getElementById('history-rag-toggle');
+        const systemPromptInput = document.getElementById('system-prompt');
+        const tempInput = document.getElementById('temperature');
+        const maxTokensInput = document.getElementById('max-tokens');
+        const clearBtn = document.getElementById('clear-btn');
+        const statusIndicator = document.getElementById('status-indicator');
+        const statusText = document.getElementById('status-text');
+        const headerModelName = document.getElementById('header-model-name');
+        
+        // チャット項目
+        const chatInput = document.getElementById('chat-input');
+        const sendBtn = document.getElementById('send-btn');
+        const messageList = document.getElementById('message-list');
+        const attachBtn = document.getElementById('attach-btn');
+        const fileInput = document.getElementById('file-input');
+        const previewContainer = document.getElementById('preview-container');
+
+        // 添付ファイルを保持する配列
+        let attachedFiles = [];
+        // PDF.jsのワーカー設定
+        if (window.pdfjsLib) {
+            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+        }
+
+        // 会話履歴を保持する配列
+        let conversationHistory = [];
+        let currentThreadId = 'thread-' + Date.now() + '-' + Math.random().toString(36).substring(2, 9);
+
+        // ページロード時にローカルストレージから設定を復元
+        window.addEventListener('load', () => {
+            const savedUrl = localStorage.getItem('colab_chat_api_url');
+            if (savedUrl) {
+                apiUrlInput.value = savedUrl;
+                checkConnection(savedUrl);
+            }
+            const savedSearch = localStorage.getItem('colab_chat_web_search');
+            if (savedSearch === 'true') {
+                searchToggle.checked = true;
+            }
+            const savedHistoryRag = localStorage.getItem('colab_chat_history_rag');
+            if (savedHistoryRag === 'true') {
+                historyRagToggle.checked = true;
+            }
+        });
+
+        searchToggle.addEventListener('change', () => {
+            localStorage.setItem('colab_chat_web_search', searchToggle.checked);
+        });
+
+        historyRagToggle.addEventListener('change', () => {
+            localStorage.setItem('colab_chat_history_rag', historyRagToggle.checked);
+        });
+
+        // 添付ボタンクリック
+        attachBtn.addEventListener('click', () => {
+            fileInput.click();
+        });
+
+        // ファイル選択イベント
+        fileInput.addEventListener('change', (e) => {
+            handleSelectedFiles(e.target.files);
+            fileInput.value = ''; // リセットして同じファイルの再選択に対応
+        });
+
+        // ドラッグ＆ドロップ対応 (チャット入力枠エリア)
+        const chatInputBox = document.querySelector('.input-box-wrapper');
+        chatInputBox.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            chatInputBox.style.borderColor = 'var(--primary-color)';
+        });
+
+        chatInputBox.addEventListener('dragleave', () => {
+            chatInputBox.style.borderColor = 'var(--panel-border)';
+        });
+
+        chatInputBox.addEventListener('drop', (e) => {
+            e.preventDefault();
+            chatInputBox.style.borderColor = 'var(--panel-border)';
+            if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                handleSelectedFiles(e.dataTransfer.files);
+            }
+        });
+
+        // 選択されたファイルの処理
+        function handleSelectedFiles(files) {
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                // 重複チェック
+                if (attachedFiles.some(f => f.name === file.name && f.size === file.size)) continue;
+                attachedFiles.push(file);
+            }
+            updateFilePreviews();
+        }
+
+        // ファイルプレビューの描画
+        function updateFilePreviews() {
+            previewContainer.innerHTML = '';
+            if (attachedFiles.length === 0) {
+                previewContainer.style.display = 'none';
+                return;
+            }
+            previewContainer.style.display = 'flex';
+
+            attachedFiles.forEach((file, idx) => {
+                const item = document.createElement('div');
+                item.style.position = 'relative';
+                item.style.display = 'flex';
+                item.style.alignItems = 'center';
+                item.style.background = 'rgba(255,255,255,0.08)';
+                item.style.border = '1px solid rgba(255,255,255,0.1)';
+                item.style.borderRadius = '8px';
+                item.style.padding = '4px 28px 4px 8px';
+                item.style.fontSize = '0.8rem';
+                item.style.color = 'var(--text-main)';
+                item.style.maxWidth = '180px';
+                item.style.whiteSpace = 'nowrap';
+                item.style.overflow = 'hidden';
+                item.style.textOverflow = 'ellipsis';
+
+                // 画像の場合はサムネイルを表示
+                if (file.type.startsWith('image/')) {
+                    const img = document.createElement('img');
+                    img.style.width = '24px';
+                    img.style.height = '24px';
+                    img.style.objectFit = 'cover';
+                    img.style.borderRadius = '4px';
+                    img.style.marginRight = '6px';
+                    item.appendChild(img);
+
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        img.src = e.target.result;
+                    };
+                    reader.readAsDataURL(file);
+                } else {
+                    // ドキュメント用アイコン (SVG)
+                    const icon = document.createElement('span');
+                    icon.innerHTML = `
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:6px; color:#a5b4fc; display:inline-block; vertical-align:middle;">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                            <polyline points="14 2 14 8 20 8"></polyline>
+                            <line x1="16" y1="13" x2="8" y2="13"></line>
+                            <line x1="16" y1="17" x2="8" y2="17"></line>
+                            <polyline points="10 9 9 9 8 9"></polyline>
+                        </svg>
+                    `;
+                    item.appendChild(icon);
+                }
+
+                const nameLabel = document.createElement('span');
+                nameLabel.textContent = file.name;
+                nameLabel.style.overflow = 'hidden';
+                nameLabel.style.textOverflow = 'ellipsis';
+                item.appendChild(nameLabel);
+
+                // 削除ボタン (×)
+                const delBtn = document.createElement('span');
+                delBtn.textContent = '×';
+                delBtn.style.position = 'absolute';
+                delBtn.style.right = '6px';
+                delBtn.style.top = '50%';
+                delBtn.style.transform = 'translateY(-50%)';
+                delBtn.style.cursor = 'pointer';
+                delBtn.style.color = 'var(--text-muted)';
+                delBtn.style.fontWeight = 'bold';
+                delBtn.style.fontSize = '1rem';
+                delBtn.style.padding = '2px';
+                delBtn.addEventListener('click', () => {
+                    attachedFiles.splice(idx, 1);
+                    updateFilePreviews();
+                });
+                item.appendChild(delBtn);
+
+                previewContainer.appendChild(item);
+            });
+        }
+
+        // URL入力時
+        apiUrlInput.addEventListener('change', () => {
+            let url = apiUrlInput.value.trim();
+            if (url.endsWith('/')) url = url.slice(0, -1);
+            if (url.endsWith('/v1')) url = url.slice(0, -3);
+            apiUrlInput.value = url;
+            localStorage.setItem('colab_chat_api_url', url);
+            checkConnection(url);
+        });
+
+        // 接続テスト
+        async function checkConnection(baseUrl) {
+            if (!baseUrl) {
+                updateStatus(false, 'URLが空です');
+                return;
+            }
+            updateStatus(false, '接続中...');
+            try {
+                const response = await fetch(`${baseUrl}/v1/models`, {
+                    method: 'GET',
+                    headers: { 'Accept': 'application/json' }
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    updateStatus(true, '接続成功');
+                    populateModels(data.data);
+                } else {
+                    updateStatus(false, `エラー: ${response.status}`);
+                }
+            } catch (err) {
+                console.error(err);
+                updateStatus(false, '接続失敗 (疎通できません)');
+            }
+        }
+
+        function updateStatus(connected, text) {
+            statusIndicator.className = connected ? 'status-connected' : '';
+            statusText.textContent = text;
+        }
+
+        function populateModels(models) {
+            modelSelect.innerHTML = '';
+            if (!models || models.length === 0) {
+                const opt = document.createElement('option');
+                opt.value = '';
+                opt.textContent = 'モデルが見つかりません';
+                modelSelect.appendChild(opt);
+                return;
+            }
+            models.forEach(m => {
+                const opt = document.createElement('option');
+                opt.value = m.id;
+                opt.textContent = m.id;
+                modelSelect.appendChild(opt);
+            });
+            headerModelName.textContent = modelSelect.value;
+        }
+
+        modelSelect.addEventListener('change', () => {
+            headerModelName.textContent = modelSelect.value;
+        });
+
+        // UI追加用
+        function appendMessage(role, text) {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'message-wrapper';
+            
+            const message = document.createElement('div');
+            message.className = `message message-${role}`;
+            
+            if (role === 'assistant') {
+                message.innerHTML = marked.parse(text);
+                message.querySelectorAll('pre code').forEach((el) => {
+                    Prism.highlightElement(el);
+                });
+            } else {
+                message.textContent = text;
+            }
+            
+            wrapper.appendChild(message);
+            messageList.appendChild(wrapper);
+            messageList.scrollTop = messageList.scrollHeight;
+            return message;
+        }
+
+        // Web検索ロジック (CORS制限を100%回避するため、ローカルのPythonサーバー経由でAPIリクエストを中継する設計)
+        async function performWebSearch(query) {
+            const statusDiv = document.createElement('div');
+            statusDiv.className = 'search-status';
+            statusDiv.innerHTML = `
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="2" x2="12" y2="6"></line><line x1="12" y1="18" x2="12" y2="22"></line><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line><line x1="2" y1="12" x2="6" y2="12"></line><line x1="18" y1="12" x2="22" y2="12"></line><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line></svg>
+                <span>Webを検索中: "${query}"...</span>
+            `;
+            messageList.appendChild(statusDiv);
+            messageList.scrollTop = messageList.scrollHeight;
+
+            // ローカルサーバーの /search エンドポイントを叩く (CORSエラーは100%回避)
+            const searchUrl = `/search?q=${encodeURIComponent(query)}`;
+
+            try {
+                const response = await fetch(searchUrl);
+                if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
+                
+                const results = await response.json();
+
+                statusDiv.remove(); // 検索ステータスを消す
+
+                if (results && results.length > 0) {
+                    appendSearchResultsPanel(results);
+                } else {
+                    const failDiv = document.createElement('div');
+                    failDiv.className = 'search-status';
+                    failDiv.style.borderColor = 'var(--panel-border)';
+                    failDiv.style.color = 'var(--text-muted)';
+                    failDiv.innerHTML = `<span>検索結果が見つかりませんでした。</span>`;
+                    messageList.appendChild(failDiv);
+                    setTimeout(() => failDiv.remove(), 3000);
+                }
+
+                return results;
+
+            } catch (e) {
+                console.error('Search failed:', e);
+                statusDiv.remove();
+                
+                // 検索失敗通知を画面に表示
+                const errDiv = document.createElement('div');
+                errDiv.className = 'search-status';
+                errDiv.style.borderColor = 'var(--danger-color)';
+                errDiv.style.color = 'var(--danger-color)';
+                errDiv.innerHTML = `<span>⚠️ 検索サーバー接続エラー (スキップして回答します)</span>`;
+                messageList.appendChild(errDiv);
+                setTimeout(() => errDiv.remove(), 5000);
+                
+                return [];
+            }
+        }
+
+        // 検索結果パネルの描画
+        function appendSearchResultsPanel(results) {
+            const panel = document.createElement('div');
+            panel.className = 'search-results-panel';
+            
+            const title = document.createElement('div');
+            title.className = 'search-results-title';
+            title.innerHTML = `
+                <span>🔍 ${results.length} 件のWeb検索結果を参照しました</span>
+                <span class="arrow" style="transition: transform 0.2s">▼</span>
+            `;
+            
+            const content = document.createElement('div');
+            content.className = 'search-results-content';
+            
+            results.forEach(r => {
+                const item = document.createElement('div');
+                item.className = 'search-item';
+                
+                let cleanUrl = r.url;
+                try {
+                    if (cleanUrl.includes('uddg=')) {
+                        const parts = cleanUrl.split('uddg=');
+                        if (parts.length > 1) {
+                            cleanUrl = decodeURIComponent(parts[1].split('&')[0]);
+                        }
+                    } else if (cleanUrl.startsWith('//')) {
+                        cleanUrl = 'https:' + cleanUrl;
+                    }
+                } catch (urlErr) {
+                    console.error('URL parse error:', urlErr);
+                }
+
+                item.innerHTML = `
+                    <a href="${cleanUrl}" target="_blank" class="search-item-title">${r.title}</a>
+                    <span class="search-item-snippet">${r.snippet}</span>
+                `;
+                content.appendChild(item);
+            });
+
+            panel.appendChild(title);
+            panel.appendChild(content);
+            messageList.appendChild(panel);
+            messageList.scrollTop = messageList.scrollHeight;
+
+            // 折りたたみロジック
+            title.addEventListener('click', () => {
+                const isHidden = content.style.display === 'none';
+                content.style.display = isHidden ? 'flex' : 'none';
+                title.querySelector('.arrow').style.transform = isHidden ? 'rotate(0deg)' : 'rotate(-90deg)';
+            });
+        }
+
+        clearBtn.addEventListener('click', () => {
+            conversationHistory = [];
+            messageList.innerHTML = '';
+            currentThreadId = 'thread-' + Date.now() + '-' + Math.random().toString(36).substring(2, 9);
+            appendMessage('assistant', '会話履歴をクリアしました。新しいメッセージを入力してください。');
+        });
+
+        // 過去ログ検索機能 (過去ログRAG用)
+        async function performHistorySearch(query) {
+            const statusDiv = document.createElement('div');
+            statusDiv.className = 'search-status';
+            statusDiv.style.borderColor = '#10b981';
+            statusDiv.style.color = '#10b981';
+            statusDiv.innerHTML = `
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px; height:16px; margin-right:8px;"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+                <span>過去ログを検索中: "${query}"...</span>
+            `;
+            messageList.appendChild(statusDiv);
+            messageList.scrollTop = messageList.scrollHeight;
+
+            const searchUrl = `/search-history?q=${encodeURIComponent(query)}`;
+
+            try {
+                const response = await fetch(searchUrl);
+                if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
+                
+                const results = await response.json();
+                statusDiv.remove();
+
+                if (results && results.length > 0) {
+                    const panel = document.createElement('div');
+                    panel.className = 'search-results-panel';
+                    panel.style.borderColor = 'rgba(16, 185, 129, 0.3)';
+                    
+                    const title = document.createElement('div');
+                    title.className = 'search-results-title';
+                    title.style.color = '#34d399';
+                    title.innerHTML = `
+                        <span>📜 過去の会話を ${results.length} 件参照しました</span>
+                        <span class="arrow" style="transition: transform 0.2s">▼</span>
+                    `;
+                    
+                    const content = document.createElement('div');
+                    content.className = 'search-results-content';
+                    
+                    results.forEach((r, idx) => {
+                        const item = document.createElement('div');
+                        item.className = 'search-item';
+                        
+                        const summaryText = r.messages.map(m => `${m.role === 'user' ? '質問' : '回答'}: ${m.content}`).join('\n');
+                        
+                        item.innerHTML = `
+                            <div class="search-item-title" style="color:var(--text-main); font-weight:600;">過去スレッド ${idx+1} (${new Date(r.timestamp).toLocaleString('ja-JP')})</div>
+                            <pre style="background:rgba(0,0,0,0.2); padding:8px; border-radius:6px; font-size:0.8rem; white-space:pre-wrap; margin-top:4px; color:var(--text-muted);">${summaryText}</pre>
+                        `;
+                        content.appendChild(item);
+                    });
+
+                    panel.appendChild(title);
+                    panel.appendChild(content);
+                    messageList.appendChild(panel);
+                    messageList.scrollTop = messageList.scrollHeight;
+
+                    // 折りたたみロジック
+                    title.addEventListener('click', () => {
+                        const isHidden = content.style.display === 'none';
+                        content.style.display = isHidden ? 'flex' : 'none';
+                        title.querySelector('.arrow').style.transform = isHidden ? 'rotate(0deg)' : 'rotate(-90deg)';
+                    });
+                }
+
+                return results;
+            } catch (e) {
+                console.error('History search failed:', e);
+                statusDiv.remove();
+                return [];
+            }
+        }
+
+        // 会話履歴保存機能
+        async function saveHistoryToServer() {
+            if (conversationHistory.length === 0) return;
+            try {
+                await fetch('/save-history', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        id: currentThreadId,
+                        messages: conversationHistory
+                    })
+                });
+            } catch (e) {
+                console.error('Failed to save history:', e);
+            }
+        }
+
+        // PDFテキスト抽出ヘルパー
+        async function extractTextFromPDF(file) {
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                let extractedText = "";
+                for (let i = 1; i <= pdf.numPages; i++) {
+                    const page = await pdf.getPage(i);
+                    const content = await page.getTextContent();
+                    extractedText += content.items.map(item => item.str).join(" ") + "\n";
+                }
+                return extractedText;
+            } catch (err) {
+                console.error("PDF text extraction failed:", err);
+                return `[PDF抽出エラー: ${file.name}]`;
+            }
+        }
+
+        // メッセージ送信 (ReActループ対応)
+        async function sendMessage() {
+            const text = chatInput.value.trim();
+            const baseUrl = apiUrlInput.value.trim();
+            const model = modelSelect.value;
+
+            // テキストも添付ファイルも無ければ送信しない
+            if (!text && attachedFiles.length === 0) return;
+            if (!baseUrl || !model) {
+                alert('先にAPI接続設定とモデル選択を完了させてください。');
+                return;
+            }
+
+            chatInput.value = '';
+            chatInput.style.height = '60px';
+
+            const currentFiles = [...attachedFiles];
+            attachedFiles = [];
+            updateFilePreviews();
+
+            const userMsgDiv = appendMessage('user', text || "(添付メディアのみ)");
+            
+            // 非同期で画像（Base64）およびドキュメント（テキスト）の抽出
+            const imagesData = [];
+            const docTexts = [];
+
+            for (const file of currentFiles) {
+                if (file.type.startsWith('image/')) {
+                    const base64 = await new Promise((resolve) => {
+                        const reader = new FileReader();
+                        reader.onload = (e) => resolve(e.target.result);
+                        reader.readAsDataURL(file);
+                    });
+                    imagesData.push(base64);
+
+                    // チャット画面上に画像をインライン描画
+                    const imgElement = document.createElement('img');
+                    imgElement.src = base64;
+                    imgElement.style.maxWidth = '280px';
+                    imgElement.style.maxHeight = '280px';
+                    imgElement.style.borderRadius = '12px';
+                    imgElement.style.marginTop = '8px';
+                    imgElement.style.display = 'block';
+                    imgElement.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)';
+                    userMsgDiv.appendChild(imgElement);
+                } else if (file.name.endsWith('.pdf')) {
+                    const pdfText = await extractTextFromPDF(file);
+                    docTexts.push(`--- PDFファイル: ${file.name} ---\n${pdfText}`);
+                } else {
+                    // テキスト / CSV
+                    const txt = await new Promise((resolve) => {
+                        const reader = new FileReader();
+                        reader.onload = (e) => resolve(e.target.result);
+                        reader.readAsText(file);
+                    });
+                    docTexts.push(`--- ファイル: ${file.name} ---\n${txt}`);
+                }
+            }
+
+            let finalPromptText = text;
+
+            // RAG: Web検索がONの場合
+            if (searchToggle.checked) {
+                const searchResults = await performWebSearch(text);
+                if (searchResults && searchResults.length > 0) {
+                    const contextString = searchResults.map((r, i) => {
+                        let cleanUrl = r.url;
+                        try {
+                            if (cleanUrl.includes('uddg=')) {
+                                const parts = cleanUrl.split('uddg=');
+                                if (parts.length > 1) {
+                                    cleanUrl = decodeURIComponent(parts[1].split('&')[0]);
+                                }
+                            } else if (cleanUrl.startsWith('//')) {
+                                cleanUrl = 'https:' + cleanUrl;
+                            }
+                        } catch(e) {}
+                        return `[検索結果 ${i+1}]\nタイトル: ${r.title}\nURL: ${cleanUrl}\n内容: ${r.snippet}`;
+                    }).join('\n\n');
+                    
+                    finalPromptText = `ユーザーの質問に対して、以下のWeb検索結果を参照して回答してください。\n現在の年は2026年です。検索結果の記述が最新の情報になります。回答時には、適宜参照元のURLを提示してください。\n\n【Web検索結果】\n${contextString}\n\n【ユーザーの質問】\n${text}`;
+                }
+            }
+
+            // 過去ログRAG: トグルがONの場合
+            if (historyRagToggle.checked) {
+                const historyResults = await performHistorySearch(text);
+                if (historyResults && historyResults.length > 0) {
+                    const contextString = historyResults.map((r, i) => {
+                        // 過去の会話履歴内に画像等（配列オブジェクト）がある場合を考慮して正規化
+                        const threadMsgs = r.messages.map(m => {
+                            let contentStr = "";
+                            if (Array.isArray(m.content)) {
+                                contentStr = m.content.map(c => c.type === 'text' ? c.text : "[画像データ]").join(" ");
+                            } else {
+                                contentStr = m.content;
+                            }
+                            return `  ${m.role === 'user' ? 'ユーザー' : 'AI'}: ${contentStr}`;
+                        }).join('\n');
+                        return `[過去の会話スレッド ${i+1} (日時: ${new Date(r.timestamp).toLocaleString('ja-JP')})]\n${threadMsgs}`;
+                    }).join('\n\n');
+                    
+                    finalPromptText = `ユーザーの質問に対して、過去のやり取りも参照して回答してください。\n\n【関連する過去の会話履歴】\n${contextString}\n\n【ユーザーの現在の質問】\n${finalPromptText}`;
+                }
+            }
+
+            // 添付ドキュメントのテキスト内容をプロンプトに結合
+            if (docTexts.length > 0) {
+                finalPromptText = `${finalPromptText}\n\n【添付されたドキュメント・ファイルの内容】\n${docTexts.join('\n\n')}`;
+            }
+
+            // OpenAI Vision API形式のcontentオブジェクト構築
+            let historyContent = finalPromptText;
+            if (imagesData.length > 0) {
+                historyContent = [{ type: 'text', text: finalPromptText }];
+                imagesData.forEach(img => {
+                    historyContent.push({
+                        type: 'image_url',
+                        image_url: { url: img }
+                    });
+                });
+            }
+
+            conversationHistory.push({ role: 'user', content: historyContent });
+
+            const tempHistory = [...conversationHistory];
+            tempHistory[tempHistory.length - 1] = { role: 'user', content: historyContent };
+
+            let loopCount = 0;
+            const maxLoops = 3; // 無限ループ回避
+            let isFirstTurn = true;
+
+            while (loopCount < maxLoops) {
+                const assistantMsgDiv = appendMessage('assistant', '⏳ 応答待ち...');
+                const systemPrompt = systemPromptInput.value.trim();
+                const messages = [];
+                if (systemPrompt) {
+                    messages.push({ role: 'system', content: systemPrompt });
+                }
+                messages.push(...tempHistory);
+
+                const payload = {
+                    model: model,
+                    messages: messages,
+                    temperature: parseFloat(tempInput.value) || 0.5,
+                    max_tokens: parseInt(maxTokensInput.value) || 2048,
+                    stream: true
+                };
+
+                let assistantResponseText = '';
+                try {
+                    const response = await fetch(`${baseUrl}/v1/chat/completions`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
+
+                    const reader = response.body.getReader();
+                    const decoder = new TextDecoder('utf-8');
+                    assistantMsgDiv.textContent = ''; // 初期化
+
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+
+                        const chunk = decoder.decode(value, { stream: true });
+                        const lines = chunk.split('\n');
+
+                        for (const line of lines) {
+                            const cleanedLine = line.trim();
+                            if (!cleanedLine.startsWith('data:')) continue;
+                            
+                            const dataStr = cleanedLine.slice(5).trim();
+                            if (dataStr === '[DONE]') continue;
+
+                            try {
+                                const parsed = JSON.parse(dataStr);
+                                const content = parsed.choices[0].delta.content;
+                                if (content) {
+                                    assistantResponseText += content;
+                                    assistantMsgDiv.innerHTML = marked.parse(assistantResponseText);
+                                    assistantMsgDiv.querySelectorAll('pre code').forEach((el) => {
+                                        Prism.highlightElement(el);
+                                    });
+                                    messageList.scrollTop = messageList.scrollHeight;
+                                }
+                            } catch (e) {}
+                        }
+                    }
+
+                    // 履歴に追加
+                    tempHistory.push({ role: 'assistant', content: assistantResponseText });
+                    if (isFirstTurn) {
+                        conversationHistory.push({ role: 'assistant', content: assistantResponseText });
+                        isFirstTurn = false;
+                    } else {
+                        conversationHistory.push({ role: 'assistant', content: assistantResponseText });
+                    }
+
+                } catch (err) {
+                    console.error(err);
+                    assistantMsgDiv.innerHTML = `<span style="color:var(--danger-color)">❌ エラーが発生しました: ${err.message}</span>`;
+                    break;
+                }
+
+                // AIによるコマンド実行タグが含まれているかチェック
+                const cmdMatch = assistantResponseText.match(/<execute_command>(.*?)<\/execute_command>/s);
+                if (cmdMatch) {
+                    const cmd = cmdMatch[1].trim();
+                    loopCount++;
+
+                    // コマンド実行演出メッセージの表示
+                    const statusDiv = document.createElement('div');
+                    statusDiv.className = 'search-status';
+                    statusDiv.style.borderColor = '#a5b4fc';
+                    statusDiv.style.color = '#a5b4fc';
+                    statusDiv.innerHTML = `
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="animation: spin 2s linear infinite; width:16px; height:16px; margin-right:8px;"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
+                        <span>🤖 AIがコマンドを実行中: "${cmd}"...</span>
+                    `;
+                    messageList.appendChild(statusDiv);
+                    messageList.scrollTop = messageList.scrollHeight;
+
+                    try {
+                        const runResponse = await fetch('/run-command', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ command: cmd })
+                        });
+
+                        statusDiv.remove();
+
+                        let resultText = '';
+                        if (!runResponse.ok) {
+                            const errText = await runResponse.text();
+                            resultText = `エラー (${runResponse.status}): ${errText}`;
+                        } else {
+                            const data = await runResponse.json();
+                            resultText = `終了コード: ${data.returncode}\n`;
+                            if (data.stdout) resultText += `[STDOUT]\n${data.stdout}\n`;
+                            if (data.stderr) resultText += `[STDERR]\n${data.stderr}\n`;
+                            if (!data.stdout && !data.stderr) resultText += `(出力なし)`;
+                        }
+
+                        // 画面上にコマンド実行結果パネルを描画
+                        const resultPanel = document.createElement('div');
+                        resultPanel.className = 'search-results-panel';
+                        resultPanel.innerHTML = `
+                            <div class="search-results-title">
+                                <span>🐚 コマンド実行結果: "${cmd}"</span>
+                                <span class="arrow" style="transition: transform 0.2s">▼</span>
+                            </div>
+                            <pre class="search-results-content" style="background:#07080d; color:#a3e635; padding:12px; border-radius:8px; font-family:'Fira Code',monospace; font-size:0.8rem; overflow-x:auto; white-space:pre-wrap; margin-top:8px;">${resultText}</pre>
+                        `;
+                        messageList.appendChild(resultPanel);
+                        messageList.scrollTop = messageList.scrollHeight;
+
+                        // 折りたたみロジック
+                        const title = resultPanel.querySelector('.search-results-title');
+                        const content = resultPanel.querySelector('.search-results-content');
+                        title.addEventListener('click', () => {
+                            const isHidden = content.style.display === 'none';
+                            content.style.display = isHidden ? 'block' : 'none';
+                            title.querySelector('.arrow').style.transform = isHidden ? 'rotate(0deg)' : 'rotate(-90deg)';
+                        });
+
+                        // 実行結果を会話コンテキストとして次のループに送る
+                        const systemFeed = `[システム: コマンド実行結果]\nコマンド: ${cmd}\n${resultText}`;
+                        tempHistory.push({ role: 'user', content: systemFeed });
+                        conversationHistory.push({ role: 'user', content: `[AIによるコマンド実行結果] ${cmd} (終了コード: ${resultText.split('\n')[0].replace('終了コード: ', '')})` });
+
+                    } catch (cmdErr) {
+                        console.error(cmdErr);
+                        statusDiv.remove();
+                        tempHistory.push({ role: 'user', content: `[システム: コマンド実行エラー] ${cmdErr.message}` });
+                    }
+
+                } else {
+                    // コマンド実行タグが検出されなければループ終了
+                    break;
+                }
+            }
+            
+            // 会話履歴をサーバーに自動保存
+            await saveHistoryToServer();
+        }
+
+        // イベントリスナー
+        sendBtn.addEventListener('click', sendMessage);
+
+        chatInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && e.ctrlKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+
+        chatInput.addEventListener('input', () => {
+            chatInput.style.height = 'auto';
+            chatInput.style.height = `${chatInput.scrollHeight}px`;
+        });
+
+        // タブ切り替えロジック
+        const tabChatBtn = document.getElementById('tab-chat-btn');
+        const tabTermBtn = document.getElementById('tab-term-btn');
+        const chatPanel = document.getElementById('chat-panel');
+        const terminalPanel = document.getElementById('terminal-panel');
+
+        tabChatBtn.addEventListener('click', () => {
+            tabChatBtn.classList.add('active');
+            tabChatBtn.style.color = 'var(--text-main)';
+            tabChatBtn.style.borderBottomColor = 'var(--accent-color)';
+            
+            tabTermBtn.classList.remove('active');
+            tabTermBtn.style.color = 'var(--text-muted)';
+            tabTermBtn.style.borderBottomColor = 'transparent';
+
+            chatPanel.style.display = 'flex';
+            terminalPanel.style.display = 'none';
+        });
+
+        tabTermBtn.addEventListener('click', () => {
+            tabTermBtn.classList.add('active');
+            tabTermBtn.style.color = 'var(--text-main)';
+            tabTermBtn.style.borderBottomColor = 'var(--accent-color)';
+            
+            tabChatBtn.classList.remove('active');
+            tabChatBtn.style.color = 'var(--text-muted)';
+            tabChatBtn.style.borderBottomColor = 'transparent';
+
+            chatPanel.style.display = 'none';
+            terminalPanel.style.display = 'flex';
+        });
+
+        // ターミナル実行ロジック
+        const terminalInput = document.getElementById('terminal-input');
+        const terminalRunBtn = document.getElementById('terminal-run-btn');
+        const terminalOutput = document.getElementById('terminal-output');
+
+        async function executeCommand(cmd) {
+            if (!cmd) return;
+            terminalOutput.textContent = `⏳ コマンドを実行中: ${cmd}\n`;
+            terminalRunBtn.disabled = true;
+
+            try {
+                const response = await fetch('/run-command', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ command: cmd })
+                });
+
+                if (!response.ok) {
+                    const errText = await response.text();
+                    terminalOutput.textContent = `❌ エラー (${response.status}): ${errText}`;
+                    return;
+                }
+
+                const data = await response.json();
+                
+                let output = '';
+                if (data.stdout) {
+                    output += data.stdout;
+                }
+                if (data.stderr) {
+                    output += `\n[STDERR]\n${data.stderr}`;
+                }
+                if (output === '') {
+                    output = `(出力なし、終了コード: ${data.returncode})`;
+                } else {
+                    output += `\n\n(終了コード: ${data.returncode})`;
+                }
+                
+                terminalOutput.textContent = output;
+
+            } catch (err) {
+                console.error(err);
+                terminalOutput.textContent = `❌ 実行エラー: ${err.message}`;
+            } finally {
+                terminalRunBtn.disabled = false;
+                terminalOutput.scrollTop = terminalOutput.scrollHeight;
+            }
+        }
+
+        terminalRunBtn.addEventListener('click', () => {
+            executeCommand(terminalInput.value.trim());
+        });
+
+        terminalInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                executeCommand(terminalInput.value.trim());
+            }
+        });
+
+        // クイックコマンド実行
+        window.runQuickCommand = function(cmd) {
+            terminalInput.value = cmd;
+            executeCommand(cmd);
+        };
+    </script>
+</body>
+</html>
