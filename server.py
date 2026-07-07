@@ -12,12 +12,18 @@ PORT = int(os.environ.get("PORT", 10200))
 # SSL証明書検証をスキップするコンテキストを作成 (SSL検証エラー回避用)
 ssl_context = ssl._create_unverified_context()
 
+BASE_DIR = os.path.abspath("/opt/colab-gguf-chat" if os.path.exists("/opt/colab-gguf-chat") else ".")
+
+def get_safe_path(relative_path):
+    normalized_rel = os.path.normpath(relative_path.replace('\x00', ''))
+    target_abs = os.path.abspath(os.path.join(BASE_DIR, normalized_rel))
+    if not target_abs.startswith(BASE_DIR):
+        raise PermissionError("Access denied: path is outside the workspace.")
+    return target_abs
+
 class CustomHandler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
-        # セキュリティ保護: リモートサーバーでは公開ディレクトリを /opt/colab-gguf-chat に強制固定
-        # ローカルPCではカレントディレクトリを公開
-        target_dir = "/opt/colab-gguf-chat" if os.path.exists("/opt/colab-gguf-chat") else "."
-        super().__init__(*args, directory=target_dir, **kwargs)
+        super().__init__(*args, directory=BASE_DIR, **kwargs)
 
     def do_GET(self):
         # 検索中継API
@@ -240,6 +246,102 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
                 self.end_headers()
                 err_msg = {"error": str(e)}
                 self.wfile.write(json.dumps(err_msg).encode('utf-8'))
+            return
+
+        elif self.path == '/read-file':
+            try:
+                content_length = int(self.headers['Content-Length'])
+                post_data = self.rfile.read(content_length)
+                req_json = json.loads(post_data.decode('utf-8'))
+                file_path = req_json.get('path', '')
+
+                if not file_path:
+                    self.send_response(400)
+                    self.send_header('Content-type', 'application/json; charset=utf-8')
+                    self.send_header('Access-Control-Allow-Origin', '*')
+                    self.end_headers()
+                    self.wfile.write(b'{"error": "Path is empty"}')
+                    return
+
+                safe_path = get_safe_path(file_path)
+                print(f"[Python Server] ファイルを読み取ります: {safe_path}", flush=True)
+
+                if not os.path.exists(safe_path):
+                    self.send_response(404)
+                    self.send_header('Content-type', 'application/json; charset=utf-8')
+                    self.send_header('Access-Control-Allow-Origin', '*')
+                    self.end_headers()
+                    self.wfile.write(b'{"error": "File not found"}')
+                    return
+
+                with open(safe_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+
+                response_data = {"content": content}
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json; charset=utf-8')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps(response_data, ensure_ascii=False).encode('utf-8'))
+
+            except PermissionError as pe:
+                self.send_response(403)
+                self.send_header('Content-type', 'application/json; charset=utf-8')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(pe)}).encode('utf-8'))
+            except Exception as e:
+                traceback.print_exc()
+                self.send_response(500)
+                self.send_header('Content-type', 'application/json; charset=utf-8')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(e)}).encode('utf-8'))
+            return
+
+        elif self.path == '/write-file':
+            try:
+                content_length = int(self.headers['Content-Length'])
+                post_data = self.rfile.read(content_length)
+                req_json = json.loads(post_data.decode('utf-8'))
+                file_path = req_json.get('path', '')
+                content = req_json.get('content', '')
+
+                if not file_path:
+                    self.send_response(400)
+                    self.send_header('Content-type', 'application/json; charset=utf-8')
+                    self.send_header('Access-Control-Allow-Origin', '*')
+                    self.end_headers()
+                    self.wfile.write(b'{"error": "Path is empty"}')
+                    return
+
+                safe_path = get_safe_path(file_path)
+                print(f"[Python Server] ファイルを書き込みます: {safe_path}", flush=True)
+
+                os.makedirs(os.path.dirname(safe_path), exist_ok=True)
+
+                with open(safe_path, 'w', encoding='utf-8') as f:
+                    f.write(content)
+
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json; charset=utf-8')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(b'{"status": "success"}')
+
+            except PermissionError as pe:
+                self.send_response(403)
+                self.send_header('Content-type', 'application/json; charset=utf-8')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(pe)}).encode('utf-8'))
+            except Exception as e:
+                traceback.print_exc()
+                self.send_response(500)
+                self.send_header('Content-type', 'application/json; charset=utf-8')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(e)}).encode('utf-8'))
             return
         
     def search_searxng(self, query):

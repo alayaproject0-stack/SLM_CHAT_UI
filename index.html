@@ -565,8 +565,23 @@
             </div>
 
             <div class="settings-group">
-                <label for="system-prompt">システムプロンプト</label>
-                <textarea id="system-prompt" rows="5" placeholder="あなたは優秀なAIアシスタントです。">あなたは親切で優秀なAIアシスタントです。リモートサーバー上でシェルコマンドを実行したい場合は、`&lt;execute_command&gt;コマンド&lt;/execute_command&gt;` の形式で出力してください。実行結果はシステムから自動的に差し戻されるので、それを元に回答を続けてください。</textarea>
+                <textarea id="system-prompt" rows="8" style="font-size:0.85rem; line-height:1.4;" placeholder="あなたは優秀なAIアシスタントです。">あなたは親切で優秀なAIアシスタントです。作業ディレクトリ内でファイル操作やコマンド実行を行いたい場合は、以下のXMLタグを単独で出力してください。システムが自動で実行し、結果をあなたに差し戻します。
+
+【利用可能なツール】
+1. ファイルの新規作成・上書き更新:
+&lt;write_file path="相対パス"&gt;
+ここにファイルの内容をそのまま記述
+&lt;/write_file&gt;
+
+2. ファイル内容の読み取り:
+&lt;read_file path="相対パス" /&gt;
+
+3. コマンドの実行:
+&lt;run_command&gt;
+ここに実行したいコマンドを記述
+&lt;/run_command&gt;
+
+※ツールを実行した場合、その結果をシステムが自動的に差し戻します。結果を確認した上で思考や次の作業を継続してください。</textarea>
             </div>
 
             <div class="settings-group" style="flex-direction: row; gap: 10px;">
@@ -1362,51 +1377,102 @@
                     break;
                 }
 
-                // AIによるコマンド実行タグが含まれているかチェック
-                const cmdMatch = assistantResponseText.match(/<execute_command>(.*?)<\/execute_command>/s);
-                if (cmdMatch) {
-                    const cmd = cmdMatch[1].trim();
-                    loopCount++;
+                // AIによるツール呼び出しタグが含まれているかチェック
+                const writeMatch = assistantResponseText.match(/<write_file\s+path="([^"]+)">([\s\S]*?)<\/write_file>/);
+                const readMatch = assistantResponseText.match(/<read_file\s+path="([^"]+)"\s*\/?>/);
+                const cmdMatch = assistantResponseText.match(/<run_command>([\s\S]*?)<\/run_command>/) || assistantResponseText.match(/<execute_command>(.*?)<\/execute_command>/s);
 
-                    // コマンド実行演出メッセージの表示
+                if (writeMatch || readMatch || cmdMatch) {
+                    loopCount++;
+                    let toolName = "";
+                    let toolArg = "";
+                    let fetchUrl = "";
+                    let payload = {};
+                    let statusText = "";
+                    let iconSvg = "";
+                    let color = "#a5b4fc";
+
+                    if (writeMatch) {
+                        toolName = "write_file";
+                        const path = writeMatch[1].trim();
+                        const content = writeMatch[2];
+                        toolArg = path;
+                        fetchUrl = "/write-file";
+                        payload = { path, content };
+                        statusText = `🤖 AIがファイルを書き込み中: "${path}"...`;
+                        iconSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="animation: spin 2s linear infinite; width:16px; height:16px; margin-right:8px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><line x1="9" y1="15" x2="15" y2="15"></line></svg>`;
+                    } else if (readMatch) {
+                        toolName = "read_file";
+                        const path = readMatch[1].trim();
+                        toolArg = path;
+                        fetchUrl = "/read-file";
+                        payload = { path };
+                        statusText = `🤖 AIがファイルを読み取り中: "${path}"...`;
+                        iconSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="animation: spin 2s linear infinite; width:16px; height:16px; margin-right:8px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>`;
+                    } else if (cmdMatch) {
+                        toolName = "run_command";
+                        const cmd = cmdMatch[1].trim();
+                        toolArg = cmd;
+                        fetchUrl = "/run-command";
+                        payload = { command: cmd };
+                        statusText = `🤖 AIがコマンドを実行中: "${cmd}"...`;
+                        iconSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="animation: spin 2s linear infinite; width:16px; height:16px; margin-right:8px;"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>`;
+                    }
+
+                    // ステータス表示の追加
                     const statusDiv = document.createElement('div');
                     statusDiv.className = 'search-status';
-                    statusDiv.style.borderColor = '#a5b4fc';
-                    statusDiv.style.color = '#a5b4fc';
-                    statusDiv.innerHTML = `
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="animation: spin 2s linear infinite; width:16px; height:16px; margin-right:8px;"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
-                        <span>🤖 AIがコマンドを実行中: "${cmd}"...</span>
-                    `;
+                    statusDiv.style.borderColor = color;
+                    statusDiv.style.color = color;
+                    statusDiv.innerHTML = `${iconSvg}<span>${statusText}</span>`;
                     messageList.appendChild(statusDiv);
                     messageList.scrollTop = messageList.scrollHeight;
 
                     try {
-                        const runResponse = await fetch('/run-command', {
+                        const toolResponse = await fetch(fetchUrl, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ command: cmd })
+                            body: JSON.stringify(payload)
                         });
 
                         statusDiv.remove();
 
                         let resultText = '';
-                        if (!runResponse.ok) {
-                            const errText = await runResponse.text();
-                            resultText = `エラー (${runResponse.status}): ${errText}`;
+                        if (!toolResponse.ok) {
+                            let errReason = '不明なエラー';
+                            try {
+                                const errJson = await toolResponse.json();
+                                errReason = errJson.error || errReason;
+                            } catch (e) {
+                                errReason = await toolResponse.text().catch(() => errReason);
+                            }
+                            resultText = `エラー (${toolResponse.status}): ${errReason}`;
                         } else {
-                            const data = await runResponse.json();
-                            resultText = `終了コード: ${data.returncode}\n`;
-                            if (data.stdout) resultText += `[STDOUT]\n${data.stdout}\n`;
-                            if (data.stderr) resultText += `[STDERR]\n${data.stderr}\n`;
-                            if (!data.stdout && !data.stderr) resultText += `(出力なし)`;
+                            if (toolName === 'write_file') {
+                                resultText = `[成功] ファイルの書き込みが正常に完了しました。`;
+                            } else if (toolName === 'read_file') {
+                                const data = await toolResponse.json();
+                                resultText = data.content;
+                            } else if (toolName === 'run_command') {
+                                const data = await toolResponse.json();
+                                resultText = `終了コード: ${data.returncode}\n`;
+                                if (data.stdout) resultText += `[STDOUT]\n${data.stdout}\n`;
+                                if (data.stderr) resultText += `[STDERR]\n${data.stderr}\n`;
+                                if (!data.stdout && !data.stderr) resultText += `(出力なし)`;
+                            }
                         }
 
-                        // 画面上にコマンド実行結果パネルを描画
+                        // 画面上に実行結果パネルを描画
                         const resultPanel = document.createElement('div');
                         resultPanel.className = 'search-results-panel';
+                        let displayTitle = "";
+                        if (toolName === 'write_file') displayTitle = `💾 ファイル書き込み完了: "${toolArg}"`;
+                        else if (toolName === 'read_file') displayTitle = `📖 ファイル読み込み完了: "${toolArg}"`;
+                        else displayTitle = `🐚 コマンド実行結果: "${toolArg}"`;
+
                         resultPanel.innerHTML = `
                             <div class="search-results-title">
-                                <span>🐚 コマンド実行結果: "${cmd}"</span>
+                                <span>${displayTitle}</span>
                                 <span class="arrow" style="transition: transform 0.2s">▼</span>
                             </div>
                             <pre class="search-results-content" style="background:#07080d; color:#a3e635; padding:12px; border-radius:8px; font-family:'Fira Code',monospace; font-size:0.8rem; overflow-x:auto; white-space:pre-wrap; margin-top:8px;">${resultText}</pre>
@@ -1423,19 +1489,19 @@
                             title.querySelector('.arrow').style.transform = isHidden ? 'rotate(0deg)' : 'rotate(-90deg)';
                         });
 
-                        // 実行結果を会話コンテキストとして次のループに送る
-                        const systemFeed = `[システム: コマンド実行結果]\nコマンド: ${cmd}\n${resultText}`;
-                        tempHistory.push({ role: 'user', content: systemFeed });
-                        conversationHistory.push({ role: 'user', content: `[AIによるコマンド実行結果] ${cmd} (終了コード: ${resultText.split('\n')[0].replace('終了コード: ', '')})` });
+                        // ReActの入力として結果をインジェクション
+                        const resultFeedback = `[ツール実行結果 - ${toolName}]\n${resultText}`;
+                        tempHistory.push({ role: 'user', content: resultFeedback });
+                        conversationHistory.push({ role: 'user', content: `[AIによるツール実行: ${toolName}] ${toolArg}` });
 
-                    } catch (cmdErr) {
-                        console.error(cmdErr);
+                    } catch (err) {
+                        console.error(err);
                         statusDiv.remove();
-                        tempHistory.push({ role: 'user', content: `[システム: コマンド実行エラー] ${cmdErr.message}` });
+                        const errFeedback = `[ツール実行エラー - ${toolName}] ${err.message}`;
+                        tempHistory.push({ role: 'user', content: errFeedback });
                     }
-
                 } else {
-                    // コマンド実行タグが検出されなければループ終了
+                    // ツールが呼び出されなかった場合はReActループを終了
                     break;
                 }
             }
