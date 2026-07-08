@@ -1,6 +1,7 @@
 import http.server
 import socketserver
 import urllib.request
+import urllib.error
 import urllib.parse
 import json
 import ssl
@@ -467,6 +468,14 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
                             self.wfile.write(chunk)
                             self.wfile.flush()
 
+            except urllib.error.HTTPError as he:
+                err_body = he.read().decode('utf-8', errors='ignore')
+                print(f"[Python Server Proxy Error] HTTP {he.code}: {he.reason}\nResponse Body: {err_body}", flush=True)
+                self.send_response(he.code if he.code else 500)
+                self.send_header('Content-type', 'application/json; charset=utf-8')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": f"API Error ({he.code}): {err_body}"}, ensure_ascii=False).encode('utf-8'))
             except Exception as e:
                 traceback.print_exc()
                 self.send_response(500)
