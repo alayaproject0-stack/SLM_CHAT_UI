@@ -1541,38 +1541,27 @@
                 let requestBody = {};
                 let baseCleanUrl = baseUrl.replace(/\/$/, "");
 
-                if (provider === 'claude') {
-                    requestUrl = `${baseCleanUrl}/v1/messages`;
-                    headers['x-api-key'] = apiKey;
-                    headers['anthropic-version'] = '2023-06-01';
-                    headers['anthropic-dangerous-direct-browser-access'] = 'true';
-
-                    const userAndAssistantMessages = messages.filter(m => m.role !== 'system');
-                    
-                    requestBody = {
-                        model: model,
-                        messages: userAndAssistantMessages,
-                        max_tokens: parseInt(maxTokensInput.value) || 2048,
-                        temperature: parseFloat(tempInput.value) || 0.5,
-                        stream: true
-                    };
-                    if (systemPrompt) {
-                        requestBody.system = systemPrompt;
-                    }
-                } else {
-                    if (provider === 'colab') {
-                        if (!baseCleanUrl.endsWith('/v1')) {
-                            requestUrl = `${baseCleanUrl}/v1/chat/completions`;
-                        } else {
-                            requestUrl = `${baseCleanUrl}/chat/completions`;
-                        }
+                // Colab (ローカルLLM) は中継接続のため直接フェッチ
+                // それ以外のクラウドプロバイダはCORS回避のためサーバーの /proxy/chat/completions を経由する
+                if (provider === 'colab') {
+                    if (!baseCleanUrl.endsWith('/v1')) {
+                        requestUrl = `${baseCleanUrl}/v1/chat/completions`;
                     } else {
                         requestUrl = `${baseCleanUrl}/chat/completions`;
                     }
 
-                    if (apiKey) {
-                        headers['Authorization'] = `Bearer ${apiKey}`;
-                    }
+                    requestBody = {
+                        model: model,
+                        messages: messages,
+                        temperature: parseFloat(tempInput.value) || 0.5,
+                        max_tokens: parseInt(maxTokensInput.value) || 2048,
+                        stream: true
+                    };
+                } else {
+                    requestUrl = "/proxy/chat/completions";
+                    headers['X-Provider'] = provider;
+                    headers['X-Api-Key'] = apiKey;
+                    headers['X-Base-Url'] = baseCleanUrl;
 
                     requestBody = {
                         model: model,

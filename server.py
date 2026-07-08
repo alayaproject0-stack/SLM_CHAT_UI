@@ -343,6 +343,138 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(json.dumps({"error": str(e)}).encode('utf-8'))
             return
+
+        elif self.path == '/proxy/chat/completions':
+            try:
+                # カスタムヘッダーの取得 (CORS回避のためのキーや接続先情報)
+                provider = self.headers.get('X-Provider', '')
+                api_key = self.headers.get('X-Api-Key', '')
+                base_url = self.headers.get('X-Base-Url', '').rstrip('/')
+
+                content_length = int(self.headers['Content-Length'])
+                post_data = self.rfile.read(content_length)
+                req_body = json.loads(post_data.decode('utf-8'))
+
+                target_url = ""
+                headers = { "Content-Type": "application/json" }
+
+                if provider == 'claude':
+                    target_url = f"{base_url}/v1/messages"
+                    headers["x-api-key"] = api_key
+                    headers["anthropic-version"] = "2023-06-01"
+                    headers["anthropic-dangerous-direct-browser-access"] = "true"
+
+                    messages = req_body.get('messages', [])
+                    user_msgs = [m for m in messages if m.get('role') != 'system']
+                    system_msg = next((m.get('content') for m in messages if m.get('role') == 'system'), None)
+
+                    # OpenAIの content 形式（配列オブジェクトまたはテキスト）の正規化
+                    formatted_user_msgs = []
+                    for m in user_msgs:
+                        role = m.get('role')
+                        content = m.get('content')
+                        if role not in ['user', 'assistant']:
+                            role = 'user'
+                        
+                        if isinstance(content, list):
+                            claude_content = []
+                            for c in content:
+                                if c.get('type') == 'text':
+                                    claude_content.append({ "type": "text", "text": c.get('text') })
+                                elif c.get('type') == 'image_url':
+                                    img_url_data = c.get('image_url', {}).get('url', '')
+                                    if img_url_data.startswith('data:'):
+                                        try:
+                                            media_part, base64_data = img_url_data.split(';base64,')
+                                            media_type = media_part.replace('data:', '')
+                                            claude_content.append({
+                                                "type": "image",
+                                                "source": {
+                                                    "type": "base64",
+                                                    "media_type": media_type,
+                                                    "data": base64_data
+                                                }
+                                            })
+                                        except Exception:
+                                            pass
+                            formatted_user_msgs.append({ "role": role, "content": claude_content })
+                        else:
+                            formatted_user_msgs.append({ "role": role, "content": str(content) })
+
+                    claude_body = {
+                        "model": req_body.get('model'),
+                        "messages": formatted_user_msgs,
+                        "max_tokens": req_body.get('max_tokens', 2048),
+                        "temperature": req_body.get('temperature', 0.5),
+                        "stream": True
+                    }
+                    if system_msg:
+                        claude_body["system"] = system_msg
+
+                    req_data = json.dumps(claude_body).encode('utf-8')
+                else:
+                    target_url = f"{base_url}/chat/completions"
+                    if api_key:
+                        headers["Authorization"] = f"Bearer {api_key}"
+                    req_data = post_data
+
+                # HTTPリクエストの送信
+                print(f"[Python Server] 外部APIへプロキシ中継します: {target_url} (プロバイダ: {provider})", flush=True)
+                req = urllib.request.Request(
+                    target_url,
+                    data=req_data,
+                    headers=headers,
+                    method='POST'
+                )
+
+                self.send_response(200)
+                self.send_header('Content-Type', 'text/event-stream')
+                self.send_header('Cache-Control', 'no-cache')
+                self.send_header('Connection', 'keep-alive')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+
+                with urllib.request.urlopen(req, context=ssl_context) as response:
+                    while True:
+                        chunk = response.readline()
+                        if not chunk:
+                            break
+                        
+                        if provider == 'claude':
+                            line = chunk.decode('utf-8').strip()
+                            if line.startswith('data:'):
+                                data_str = line[5:].strip()
+                                if data_str and data_str != '[DONE]':
+                                    try:
+                                        parsed = json.loads(data_str)
+                                        # Claude の text_delta を OpenAI 規格の delta.content に変換
+                                        if parsed.get('type') == 'content_block_delta' and parsed.get('delta', {}).get('text'):
+                                            text_delta = parsed['delta']['text']
+                                            openai_compat = {
+                                                "choices": [{
+                                                    "delta": {
+                                                        "content": text_delta
+                                                    }
+                                                }]
+                                            }
+                                            compat_line = f"data: {json.dumps(openai_compat, ensure_ascii=False)}\n\n"
+                                            self.wfile.write(compat_line.encode('utf-8'))
+                                            self.wfile.flush()
+                                    except Exception:
+                                        pass
+                        else:
+                            # OpenAI互換はそのまま垂れ流す
+                            self.wfile.write(chunk)
+                            self.wfile.flush()
+
+            except Exception as e:
+                traceback.print_exc()
+                self.send_response(500)
+                self.send_header('Content-type', 'application/json; charset=utf-8')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(e)}).encode('utf-8'))
+            return
         
     def search_searxng(self, query):
         # Python側から直接DuckDuckGo(HTML版)をスクレイピングして結果を取得
