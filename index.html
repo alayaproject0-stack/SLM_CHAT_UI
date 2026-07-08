@@ -534,16 +534,38 @@
                 Colab Chat UI
             </h1>
 
+            <!-- プロバイダ選択 -->
             <div class="settings-group">
-                <label for="api-url">Cloudflare API URL</label>
+                <label for="api-provider">AIプロバイダ</label>
+                <select id="api-provider">
+                    <option value="colab">Google Colab (Gemma-4)</option>
+                    <option value="openai">OpenAI (GPT-4o等)</option>
+                    <option value="gemini">Google Gemini</option>
+                    <option value="claude">Anthropic Claude</option>
+                    <option value="deepseek">DeepSeek</option>
+                    <option value="groq">Groq</option>
+                    <option value="openrouter">OpenRouter</option>
+                    <option value="custom">カスタム接続</option>
+                </select>
+            </div>
+
+            <!-- APIキー入力欄 -->
+            <div class="settings-group" id="api-key-group" style="display: none;">
+                <label for="api-key">APIキー</label>
+                <input type="password" id="api-key" placeholder="APIキーを入力...">
+            </div>
+
+            <div class="settings-group">
+                <label for="api-url" id="api-url-label">Cloudflare API URL</label>
                 <input type="text" id="api-url" placeholder="https://xxxx.trycloudflare.com" value="">
             </div>
 
             <div class="settings-group">
                 <label for="model-select">使用モデル</label>
                 <select id="model-select">
-                    <option value="">URL入力後に取得されます</option>
+                    <option value="">接続設定後に選択してください</option>
                 </select>
+                <input type="text" id="model-custom" style="display: none; margin-top: 8px;" placeholder="モデル名を手動入力...">
             </div>
 
             <!-- Web検索スイッチ -->
@@ -685,8 +707,13 @@
 
     <script>
         // 設定項目
+        const apiProviderSelect = document.getElementById('api-provider');
+        const apiKeyInput = document.getElementById('api-key');
+        const apiKeyGroup = document.getElementById('api-key-group');
         const apiUrlInput = document.getElementById('api-url');
+        const apiUrlLabel = document.getElementById('api-url-label');
         const modelSelect = document.getElementById('model-select');
+        const modelCustomInput = document.getElementById('model-custom');
         const searchToggle = document.getElementById('web-search-toggle');
         const historyRagToggle = document.getElementById('history-rag-toggle');
         const systemPromptInput = document.getElementById('system-prompt');
@@ -716,13 +743,164 @@
         let conversationHistory = [];
         let currentThreadId = 'thread-' + Date.now() + '-' + Math.random().toString(36).substring(2, 9);
 
-        // ページロード時にローカルストレージから設定を復元
-        window.addEventListener('load', () => {
-            const savedUrl = localStorage.getItem('colab_chat_api_url');
-            if (savedUrl) {
-                apiUrlInput.value = savedUrl;
-                checkConnection(savedUrl);
+        // AIプロバイダプリセット
+        const PROVIDER_PRESETS = {
+            colab: {
+                url: '',
+                label: 'Cloudflare API URL',
+                placeholder: 'https://xxxx.trycloudflare.com',
+                requiresKey: false,
+                models: [{ value: 'auto', text: '接続後に自動検知' }]
+            },
+            openai: {
+                url: 'https://api.openai.com/v1',
+                label: 'API URL (OpenAI規格)',
+                placeholder: 'https://api.openai.com/v1',
+                requiresKey: true,
+                models: [
+                    { value: 'gpt-4o', text: 'gpt-4o (標準モデル)' },
+                    { value: 'gpt-4o-mini', text: 'gpt-4o-mini (軽量高速)' },
+                    { value: 'gpt-3.5-turbo', text: 'gpt-3.5-turbo (旧標準)' },
+                    { value: 'custom', text: '手動入力...' }
+                ]
+            },
+            gemini: {
+                url: 'https://generativelanguage.googleapis.com/v1beta/openai',
+                label: 'API URL (Gemini-OpenAI規格)',
+                placeholder: 'https://generativelanguage.googleapis.com/v1beta/openai',
+                requiresKey: true,
+                models: [
+                    { value: 'gemini-1.5-pro', text: 'gemini-1.5-pro (高性能)' },
+                    { value: 'gemini-1.5-flash', text: 'gemini-1.5-flash (高速・安価)' },
+                    { value: 'custom', text: '手動入力...' }
+                ]
+            },
+            claude: {
+                url: 'https://api.anthropic.com',
+                label: 'API URL (Claude公式)',
+                placeholder: 'https://api.anthropic.com',
+                requiresKey: true,
+                models: [
+                    { value: 'claude-3-5-sonnet-20240620', text: 'claude-3.5-sonnet' },
+                    { value: 'claude-3-opus-20240229', text: 'claude-3-opus' },
+                    { value: 'claude-3-haiku-20240307', text: 'claude-3-haiku' },
+                    { value: 'custom', text: '手動入力...' }
+                ]
+            },
+            deepseek: {
+                url: 'https://api.deepseek.com/v1',
+                label: 'API URL (DeepSeek公式)',
+                placeholder: 'https://api.deepseek.com/v1',
+                requiresKey: true,
+                models: [
+                    { value: 'deepseek-chat', text: 'deepseek-chat (会話)' },
+                    { value: 'deepseek-coder', text: 'deepseek-coder (コーディング)' },
+                    { value: 'custom', text: '手動入力...' }
+                ]
+            },
+            groq: {
+                url: 'https://api.groq.com/openai/v1',
+                label: 'API URL (Groq公式)',
+                placeholder: 'https://api.groq.com/openai/v1',
+                requiresKey: true,
+                models: [
+                    { value: 'llama-3.1-70b-versatile', text: 'llama-3.1-70b' },
+                    { value: 'llama-3.1-8b-instant', text: 'llama-3.1-8b' },
+                    { value: 'mixtral-8x7b-32768', text: 'mixtral-8x7b' },
+                    { value: 'custom', text: '手動入力...' }
+                ]
+            },
+            openrouter: {
+                url: 'https://openrouter.ai/api/v1',
+                label: 'API URL (OpenRouter公式)',
+                placeholder: 'https://openrouter.ai/api/v1',
+                requiresKey: true,
+                models: [
+                    { value: 'anthropic/claude-3.5-sonnet', text: 'Claude 3.5 Sonnet' },
+                    { value: 'google/gemini-flash-1.5', text: 'Gemini 1.5 Flash' },
+                    { value: 'meta-llama/llama-3-70b-instruct', text: 'Llama 3 70B' },
+                    { value: 'custom', text: '手動入力...' }
+                ]
+            },
+            custom: {
+                url: '',
+                label: 'API Base URL',
+                placeholder: 'https://your-custom-endpoint/v1',
+                requiresKey: true,
+                models: [
+                    { value: 'custom', text: '手動入力...' }
+                ]
             }
+        };
+
+        function updateProviderUI(provider) {
+            const preset = PROVIDER_PRESETS[provider];
+            if (!preset) return;
+
+            apiUrlLabel.textContent = preset.label;
+            apiUrlInput.placeholder = preset.placeholder;
+
+            if (preset.requiresKey) {
+                apiKeyGroup.style.display = 'flex';
+                const savedKey = localStorage.getItem(`api_key_${provider}`);
+                apiKeyInput.value = savedKey || '';
+            } else {
+                apiKeyGroup.style.display = 'none';
+                apiKeyInput.value = '';
+            }
+
+            if (preset.url) {
+                apiUrlInput.value = preset.url;
+            } else if (provider === 'colab') {
+                apiUrlInput.value = localStorage.getItem('colab_chat_api_url') || '';
+            } else if (provider === 'custom') {
+                apiUrlInput.value = localStorage.getItem('custom_chat_api_url') || '';
+            }
+
+            modelSelect.innerHTML = '';
+            preset.models.forEach(m => {
+                const opt = document.createElement('option');
+                opt.value = m.value;
+                opt.textContent = m.text;
+                modelSelect.appendChild(opt);
+            });
+
+            const savedModel = localStorage.getItem(`api_model_${provider}`);
+            if (savedModel && preset.models.some(m => m.value === savedModel)) {
+                modelSelect.value = savedModel;
+            } else {
+                modelSelect.value = preset.models[0].value;
+            }
+
+            handleModelSelectChange();
+        }
+
+        function handleModelSelectChange() {
+            const provider = apiProviderSelect.value;
+            const isCustom = modelSelect.value === 'custom';
+            if (isCustom) {
+                modelCustomInput.style.display = 'block';
+                const savedCustomModel = localStorage.getItem(`api_model_custom_${provider}`);
+                modelCustomInput.value = savedCustomModel || '';
+            } else {
+                modelCustomInput.style.display = 'none';
+            }
+            updateHeaderModelName();
+        }
+
+        function updateHeaderModelName() {
+            const provider = apiProviderSelect.value;
+            const isCustom = modelSelect.value === 'custom';
+            const selectedModel = isCustom ? modelCustomInput.value : modelSelect.value;
+            headerModelName.textContent = selectedModel || '未設定';
+        }
+
+        // ページロード時の初期化
+        window.addEventListener('load', () => {
+            const savedProvider = localStorage.getItem('api_provider') || 'colab';
+            apiProviderSelect.value = savedProvider;
+            updateProviderUI(savedProvider);
+
             const savedSearch = localStorage.getItem('colab_chat_web_search');
             if (savedSearch === 'true') {
                 searchToggle.checked = true;
@@ -731,6 +909,44 @@
             if (savedHistoryRag === 'true') {
                 historyRagToggle.checked = true;
             }
+
+            // Colabの場合のみ、URLがあれば自動接続検証
+            if (savedProvider === 'colab' && apiUrlInput.value) {
+                checkConnection(apiUrlInput.value);
+            }
+        });
+
+        // UIイベントリスナー
+        apiProviderSelect.addEventListener('change', () => {
+            const provider = apiProviderSelect.value;
+            localStorage.setItem('api_provider', provider);
+            updateProviderUI(provider);
+        });
+
+        apiKeyInput.addEventListener('input', () => {
+            const provider = apiProviderSelect.value;
+            localStorage.setItem(`api_key_${provider}`, apiKeyInput.value.trim());
+        });
+
+        apiUrlInput.addEventListener('input', () => {
+            const provider = apiProviderSelect.value;
+            if (provider === 'colab') {
+                localStorage.setItem('colab_chat_api_url', apiUrlInput.value.trim());
+            } else if (provider === 'custom') {
+                localStorage.setItem('custom_chat_api_url', apiUrlInput.value.trim());
+            }
+        });
+
+        modelSelect.addEventListener('change', () => {
+            const provider = apiProviderSelect.value;
+            localStorage.setItem(`api_model_${provider}`, modelSelect.value);
+            handleModelSelectChange();
+        });
+
+        modelCustomInput.addEventListener('input', () => {
+            const provider = apiProviderSelect.value;
+            localStorage.setItem(`api_model_custom_${provider}`, modelCustomInput.value.trim());
+            updateHeaderModelName();
         });
 
         searchToggle.addEventListener('change', () => {
@@ -1173,13 +1389,20 @@
         // メッセージ送信 (ReActループ対応)
         async function sendMessage() {
             const text = chatInput.value.trim();
+            const provider = apiProviderSelect.value;
             const baseUrl = apiUrlInput.value.trim();
-            const model = modelSelect.value;
+            const apiKey = apiKeyInput.value.trim();
+            const model = modelSelect.value === 'custom' ? modelCustomInput.value.trim() : modelSelect.value;
 
             // テキストも添付ファイルも無ければ送信しない
             if (!text && attachedFiles.length === 0) return;
             if (!baseUrl || !model) {
                 alert('先にAPI接続設定とモデル選択を完了させてください。');
+                return;
+            }
+            const preset = PROVIDER_PRESETS[provider];
+            if (preset && preset.requiresKey && !apiKey) {
+                alert('このプロバイダにはAPIキーの入力が必要です。');
                 return;
             }
 
@@ -1311,20 +1534,60 @@
                 }
                 messages.push(...tempHistory);
 
-                const payload = {
-                    model: model,
-                    messages: messages,
-                    temperature: parseFloat(tempInput.value) || 0.5,
-                    max_tokens: parseInt(maxTokensInput.value) || 2048,
-                    stream: true
-                };
+                // APIリクエストのURL・ヘッダー・ペイロードの動的構築
+                let requestUrl = "";
+                const headers = { 'Content-Type': 'application/json' };
+                let requestBody = {};
+                let baseCleanUrl = baseUrl.replace(/\/$/, "");
+
+                if (provider === 'claude') {
+                    requestUrl = `${baseCleanUrl}/v1/messages`;
+                    headers['x-api-key'] = apiKey;
+                    headers['anthropic-version'] = '2023-06-01';
+                    headers['anthropic-dangerous-direct-browser-access'] = 'true';
+
+                    const userAndAssistantMessages = messages.filter(m => m.role !== 'system');
+                    
+                    requestBody = {
+                        model: model,
+                        messages: userAndAssistantMessages,
+                        max_tokens: parseInt(maxTokensInput.value) || 2048,
+                        temperature: parseFloat(tempInput.value) || 0.5,
+                        stream: true
+                    };
+                    if (systemPrompt) {
+                        requestBody.system = systemPrompt;
+                    }
+                } else {
+                    if (provider === 'colab') {
+                        if (!baseCleanUrl.endsWith('/v1')) {
+                            requestUrl = `${baseCleanUrl}/v1/chat/completions`;
+                        } else {
+                            requestUrl = `${baseCleanUrl}/chat/completions`;
+                        }
+                    } else {
+                        requestUrl = `${baseCleanUrl}/chat/completions`;
+                    }
+
+                    if (apiKey) {
+                        headers['Authorization'] = `Bearer ${apiKey}`;
+                    }
+
+                    requestBody = {
+                        model: model,
+                        messages: messages,
+                        temperature: parseFloat(tempInput.value) || 0.5,
+                        max_tokens: parseInt(maxTokensInput.value) || 2048,
+                        stream: true
+                    };
+                }
 
                 let assistantResponseText = '';
                 try {
-                    const response = await fetch(`${baseUrl}/v1/chat/completions`, {
+                    const response = await fetch(requestUrl, {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(payload)
+                        headers: headers,
+                        body: JSON.stringify(requestBody)
                     });
 
                     if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
@@ -1349,9 +1612,20 @@
 
                             try {
                                 const parsed = JSON.parse(dataStr);
-                                const content = parsed.choices[0].delta.content;
-                                if (content) {
-                                    assistantResponseText += content;
+                                let deltaContent = "";
+
+                                if (provider === 'claude') {
+                                    if (parsed.type === 'content_block_delta' && parsed.delta && parsed.delta.text) {
+                                        deltaContent = parsed.delta.text;
+                                    }
+                                } else {
+                                    if (parsed.choices && parsed.choices[0] && parsed.choices[0].delta) {
+                                        deltaContent = parsed.choices[0].delta.content || "";
+                                    }
+                                }
+
+                                if (deltaContent) {
+                                    assistantResponseText += deltaContent;
                                     assistantMsgDiv.innerHTML = marked.parse(assistantResponseText);
                                     assistantMsgDiv.querySelectorAll('pre code').forEach((el) => {
                                         Prism.highlightElement(el);
