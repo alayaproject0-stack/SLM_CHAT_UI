@@ -6,6 +6,8 @@ import json
 import ssl
 import traceback
 import os
+import sqlite3
+import re
 
 PORT = int(os.environ.get("PORT", 10200))
 
@@ -13,6 +15,10 @@ PORT = int(os.environ.get("PORT", 10200))
 ssl_context = ssl._create_unverified_context()
 
 BASE_DIR = os.path.abspath("/opt/colab-gguf-chat" if os.path.exists("/opt/colab-gguf-chat") else ".")
+DB_DIR = os.path.join(BASE_DIR, "data")
+DEFAULT_DB_PATH = os.path.join(DB_DIR, "app.db")
+MAX_SQL_ROWS = 100
+BLOCKED_SQL_KEYWORDS = ("ATTACH", "DETACH", "LOAD_EXTENSION")
 
 def get_safe_path(relative_path):
     normalized_rel = os.path.normpath(relative_path.replace('\x00', ''))
@@ -20,6 +26,88 @@ def get_safe_path(relative_path):
     if not target_abs.startswith(BASE_DIR):
         raise PermissionError("Access denied: path is outside the workspace.")
     return target_abs
+
+def get_safe_db_path(relative_path=None):
+    return get_safe_path(relative_path or "data/app.db")
+
+def init_default_db():
+    os.makedirs(DB_DIR, exist_ok=True)
+    if os.path.exists(DEFAULT_DB_PATH):
+        return
+    conn = sqlite3.connect(DEFAULT_DB_PATH)
+    try:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS notes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                content TEXT,
+                created_at TEXT DEFAULT (datetime('now'))
+            )
+        """)
+        conn.commit()
+    finally:
+        conn.close()
+
+def validate_sql(sql):
+    sql = sql.strip()
+    if not sql:
+        raise ValueError("SQL is empty")
+    if ";" in sql.rstrip(";"):
+        raise ValueError("Multiple SQL statements are not allowed")
+    upper = re.sub(r"'[^']*'", "", sql.upper())
+    upper = re.sub(r'"[^"]*"', "", upper)
+    for keyword in BLOCKED_SQL_KEYWORDS:
+        if re.search(rf"\b{keyword}\b", upper):
+            raise PermissionError(f"'{keyword}' is not allowed")
+    return sql
+
+def execute_sql(db_path, sql):
+    sql = validate_sql(sql)
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        cursor = conn.cursor()
+        cursor.execute(sql)
+        sql_upper = sql.lstrip().upper()
+        if sql_upper.startswith(("SELECT", "PRAGMA", "WITH", "EXPLAIN")):
+            rows = cursor.fetchmany(MAX_SQL_ROWS + 1)
+            columns = [desc[0] for desc in cursor.description] if cursor.description else []
+            truncated = len(rows) > MAX_SQL_ROWS
+            if truncated:
+                rows = rows[:MAX_SQL_ROWS]
+            return {
+                "type": "query",
+                "columns": columns,
+                "rows": [dict(row) for row in rows],
+                "row_count": len(rows),
+                "truncated": truncated,
+            }
+        conn.commit()
+        return {
+            "type": "execute",
+            "rows_affected": cursor.rowcount,
+            "last_row_id": cursor.lastrowid,
+        }
+    finally:
+        conn.close()
+
+def list_tables(db_path):
+    if not os.path.exists(db_path):
+        return {"tables": []}
+    conn = sqlite3.connect(db_path)
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+        return {"tables": [row[0] for row in cursor.fetchall()]}
+    finally:
+        conn.close()
+
+def send_json_response(handler, status_code, payload):
+    handler.send_response(status_code)
+    handler.send_header("Content-type", "application/json; charset=utf-8")
+    handler.send_header("Access-Control-Allow-Origin", "*")
+    handler.end_headers()
+    handler.wfile.write(json.dumps(payload, ensure_ascii=False).encode("utf-8"))
 
 class CustomHandler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
@@ -343,6 +431,45 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(json.dumps({"error": str(e)}).encode('utf-8'))
             return
+
+        elif self.path == '/run-sql':
+            try:
+                content_length = int(self.headers['Content-Length'])
+                post_data = self.rfile.read(content_length)
+                req_json = json.loads(post_data.decode('utf-8'))
+                sql = req_json.get('sql', '')
+                db_path = get_safe_db_path(req_json.get('db'))
+
+                print(f"[Python Server] SQLを実行します ({db_path}): {sql}", flush=True)
+                result = execute_sql(db_path, sql)
+                send_json_response(self, 200, result)
+            except PermissionError as pe:
+                send_json_response(self, 403, {"error": str(pe)})
+            except ValueError as ve:
+                send_json_response(self, 400, {"error": str(ve)})
+            except sqlite3.Error as se:
+                send_json_response(self, 400, {"error": f"SQL error: {se}"})
+            except Exception as e:
+                traceback.print_exc()
+                send_json_response(self, 500, {"error": str(e)})
+            return
+
+        elif self.path == '/list-tables':
+            try:
+                content_length = int(self.headers['Content-Length'])
+                post_data = self.rfile.read(content_length)
+                req_json = json.loads(post_data.decode('utf-8'))
+                db_path = get_safe_db_path(req_json.get('db'))
+
+                print(f"[Python Server] テーブル一覧を取得します: {db_path}", flush=True)
+                result = list_tables(db_path)
+                send_json_response(self, 200, result)
+            except PermissionError as pe:
+                send_json_response(self, 403, {"error": str(pe)})
+            except Exception as e:
+                traceback.print_exc()
+                send_json_response(self, 500, {"error": str(e)})
+            return
         
     def search_searxng(self, query):
         # Python側から直接DuckDuckGo(HTML版)をスクレイピングして結果を取得
@@ -398,7 +525,9 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         print("[Python Server] 検索結果の取得に失敗しました。", flush=True)
         return []
 
-# サーバー起動 (ポート 8001)
+init_default_db()
+
+# サーバー起動
 handler = CustomHandler
 # アドレスを再利用できるように設定 (ソケット占有エラー対策)
 socketserver.TCPServer.allow_reuse_address = True
