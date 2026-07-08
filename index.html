@@ -564,6 +564,20 @@
                 </label>
             </div>
 
+            <!-- 接続維持 (キープアライブ) スイッチ -->
+            <div class="switch-container">
+                <span class="switch-label">📡 接続維持 (キープアライブ)</span>
+                <label class="switch">
+                    <input type="checkbox" id="keep-alive-toggle" checked>
+                    <span class="slider"></span>
+                </label>
+            </div>
+
+            <div class="settings-group" id="keep-alive-interval-group">
+                <label for="keep-alive-interval">キープアライブ間隔 (秒)</label>
+                <input type="number" id="keep-alive-interval" value="45" step="5" min="15" max="300">
+            </div>
+
             <div class="settings-group">
                 <textarea id="system-prompt" rows="8" style="font-size:0.85rem; line-height:1.4;" placeholder="あなたは優秀なAIアシスタントです。">あなたは親切で優秀なAIアシスタントです。作業ディレクトリ内でファイル操作やコマンド実行を行いたい場合は、以下のXMLタグを単独で出力してください。システムが自動で実行し、結果をあなたに差し戻します。
 
@@ -689,6 +703,8 @@
         const modelSelect = document.getElementById('model-select');
         const searchToggle = document.getElementById('web-search-toggle');
         const historyRagToggle = document.getElementById('history-rag-toggle');
+        const keepAliveToggle = document.getElementById('keep-alive-toggle');
+        const keepAliveIntervalInput = document.getElementById('keep-alive-interval');
         const systemPromptInput = document.getElementById('system-prompt');
         const tempInput = document.getElementById('temperature');
         const maxTokensInput = document.getElementById('max-tokens');
@@ -716,6 +732,10 @@
         let conversationHistory = [];
         let currentThreadId = 'thread-' + Date.now() + '-' + Math.random().toString(36).substring(2, 9);
 
+        // キープアライブ用タイマー
+        let keepAliveTimer = null;
+        const KEEP_ALIVE_INTERVAL_DEFAULT = 45;
+
         // ページロード時にローカルストレージから設定を復元
         window.addEventListener('load', () => {
             const savedUrl = localStorage.getItem('colab_chat_api_url');
@@ -731,6 +751,15 @@
             if (savedHistoryRag === 'true') {
                 historyRagToggle.checked = true;
             }
+            const savedKeepAlive = localStorage.getItem('colab_chat_keep_alive');
+            if (savedKeepAlive === 'false') {
+                keepAliveToggle.checked = false;
+            }
+            const savedKeepAliveInterval = localStorage.getItem('colab_chat_keep_alive_interval');
+            if (savedKeepAliveInterval) {
+                keepAliveIntervalInput.value = savedKeepAliveInterval;
+            }
+            updateKeepAliveIntervalVisibility();
         });
 
         searchToggle.addEventListener('change', () => {
@@ -740,6 +769,81 @@
         historyRagToggle.addEventListener('change', () => {
             localStorage.setItem('colab_chat_history_rag', historyRagToggle.checked);
         });
+
+        keepAliveToggle.addEventListener('change', () => {
+            localStorage.setItem('colab_chat_keep_alive', keepAliveToggle.checked);
+            updateKeepAliveIntervalVisibility();
+            if (keepAliveToggle.checked) {
+                startKeepAlive();
+            } else {
+                stopKeepAlive();
+            }
+        });
+
+        keepAliveIntervalInput.addEventListener('change', () => {
+            const interval = Math.max(15, Math.min(300, parseInt(keepAliveIntervalInput.value) || KEEP_ALIVE_INTERVAL_DEFAULT));
+            keepAliveIntervalInput.value = interval;
+            localStorage.setItem('colab_chat_keep_alive_interval', interval);
+            if (keepAliveToggle.checked) {
+                startKeepAlive();
+            }
+        });
+
+        function updateKeepAliveIntervalVisibility() {
+            document.getElementById('keep-alive-interval-group').style.display = keepAliveToggle.checked ? 'flex' : 'none';
+        }
+
+        function getKeepAliveIntervalMs() {
+            const intervalSec = Math.max(15, Math.min(300, parseInt(keepAliveIntervalInput.value) || KEEP_ALIVE_INTERVAL_DEFAULT));
+            return intervalSec * 1000;
+        }
+
+        function stopKeepAlive() {
+            if (keepAliveTimer) {
+                clearInterval(keepAliveTimer);
+                keepAliveTimer = null;
+            }
+        }
+
+        function startKeepAlive() {
+            stopKeepAlive();
+            if (!keepAliveToggle.checked) return;
+
+            const baseUrl = apiUrlInput.value.trim();
+            if (!baseUrl) return;
+
+            sendKeepAlivePing(baseUrl);
+
+            keepAliveTimer = setInterval(() => {
+                sendKeepAlivePing(apiUrlInput.value.trim());
+            }, getKeepAliveIntervalMs());
+        }
+
+        async function sendKeepAlivePing(baseUrl) {
+            if (!baseUrl || !keepAliveToggle.checked) return;
+
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+                const response = await fetch(`${baseUrl}/v1/models`, {
+                    method: 'GET',
+                    headers: { 'Accept': 'application/json' },
+                    signal: controller.signal
+                });
+                clearTimeout(timeoutId);
+
+                if (response.ok) {
+                    const timeStr = new Date().toLocaleTimeString('ja-JP');
+                    updateStatus(true, `接続中 (キープアライブ ${timeStr})`);
+                } else {
+                    updateStatus(false, `キープアライブ失敗: HTTP ${response.status}`);
+                }
+            } catch (err) {
+                console.warn('[KeepAlive] 接続維持信号の送信に失敗:', err);
+                updateStatus(false, 'キープアライブ失敗 (接続が切れた可能性)');
+            }
+        }
 
         // 添付ボタンクリック
         attachBtn.addEventListener('click', () => {
@@ -878,6 +982,7 @@
         // 接続テスト
         async function checkConnection(baseUrl) {
             if (!baseUrl) {
+                stopKeepAlive();
                 updateStatus(false, 'URLが空です');
                 return;
             }
@@ -889,13 +994,19 @@
                 });
                 if (response.ok) {
                     const data = await response.json();
-                    updateStatus(true, '接続成功');
                     populateModels(data.data);
+                    if (keepAliveToggle.checked) {
+                        startKeepAlive();
+                    } else {
+                        updateStatus(true, '接続成功');
+                    }
                 } else {
+                    stopKeepAlive();
                     updateStatus(false, `エラー: ${response.status}`);
                 }
             } catch (err) {
                 console.error(err);
+                stopKeepAlive();
                 updateStatus(false, '接続失敗 (疎通できません)');
             }
         }
