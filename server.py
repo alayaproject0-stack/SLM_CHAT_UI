@@ -616,7 +616,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
                         req_body = json.loads(post_data.decode('utf-8'))
                         model_name = req_body.get('model', '').lower()
                         import re
-                        if model_name and re.search(r'(^|[\/-])(o[13]|gpt-5)(-|$)', model_name):
+                        if model_name and re.search(r'(^|[\/-])(o[13]|gpt-5)([-.]|$)', model_name):
                             # max_tokens を max_completion_tokens に変換
                             if 'max_tokens' in req_body:
                                 req_body['max_completion_tokens'] = req_body.pop('max_tokens')
