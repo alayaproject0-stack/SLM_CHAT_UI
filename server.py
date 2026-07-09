@@ -13,6 +13,7 @@ import socket
 socket.setdefaulttimeout(30)
 
 PORT = int(os.environ.get("PORT", 10200))
+ACCESS_KEY = "a9b2c8d4"
 
 # SSL証明書検証をスキップするコンテキストを作成 (SSL検証エラー回避用)
 ssl_context = ssl._create_unverified_context()
@@ -30,7 +31,189 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=BASE_DIR, **kwargs)
 
+    def check_auth(self):
+        # 1. URLパラメータのチェック
+        parsed_url = urllib.parse.urlparse(self.path)
+        query_params = urllib.parse.parse_qs(parsed_url.query)
+        url_key = query_params.get('key', [''])[0]
+        if url_key == ACCESS_KEY:
+            return True
+
+        # 2. Cookieのチェック
+        cookie_header = self.headers.get('Cookie', '')
+        if cookie_header:
+            cookies = {}
+            for cookie in cookie_header.split(';'):
+                parts = cookie.strip().split('=', 1)
+                if len(parts) == 2:
+                    cookies[parts[0]] = parts[1]
+            if cookies.get('access_key') == ACCESS_KEY:
+                return True
+
+        return False
+
+    def send_login_html(self):
+        login_html = """<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ログイン - Colab Chat UI</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-main: #0b0f19;
+            --panel-bg: rgba(17, 24, 39, 0.7);
+            --panel-border: rgba(255, 255, 255, 0.08);
+            --text-main: #f3f4f6;
+            --text-muted: #9ca3af;
+            --accent-color: #6366f1;
+            --accent-glow: rgba(99, 102, 241, 0.15);
+        }
+        body {
+            background-color: var(--bg-main);
+            color: var(--text-main);
+            font-family: 'Outfit', sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }
+        .login-card {
+            background: var(--panel-bg);
+            border: 1px solid var(--panel-border);
+            border-radius: 16px;
+            padding: 40px;
+            width: 100%;
+            max-width: 400px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(16px);
+            text-align: center;
+            box-sizing: border-box;
+        }
+        h2 {
+            margin-top: 0;
+            font-size: 1.75rem;
+            font-weight: 600;
+            color: #a5b4fc;
+        }
+        p {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            margin-bottom: 24px;
+        }
+        input {
+            width: 100%;
+            padding: 12px 16px;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--panel-border);
+            border-radius: 8px;
+            color: white;
+            font-size: 1rem;
+            margin-bottom: 16px;
+            box-sizing: border-box;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        input:focus {
+            border-color: var(--accent-color);
+            box-shadow: 0 0 8px var(--accent-glow);
+        }
+        button {
+            width: 100%;
+            padding: 12px;
+            background: var(--accent-color);
+            border: none;
+            border-radius: 8px;
+            color: white;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity 0.2s, transform 0.1s;
+        }
+        button:hover {
+            opacity: 0.9;
+        }
+        button:active {
+            transform: scale(0.98);
+        }
+        .error-msg {
+            color: #ef4444;
+            font-size: 0.85rem;
+            margin-top: 12px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-card">
+        <h2>Colab Chat UI</h2>
+        <p>サーバーへのアクセスが保護されています。<br>アクセスキーを入力してください。</p>
+        <input type="password" id="access-key-input" placeholder="アクセスキーを入力...">
+        <button id="login-btn">認証する</button>
+        <div class="error-msg" id="error-msg">アクセスキーが正しくありません。</div>
+    </div>
+
+    <script>
+        // URLパラメータからの自動キー保存
+        const urlParams = new URLSearchParams(window.location.search);
+        const urlKey = urlParams.get('key');
+        if (urlKey) {
+            document.cookie = "access_key=" + urlKey + "; path=/; max-age=31536000; SameSite=Strict";
+            window.location.href = window.location.pathname; // パラメータを消去してリダイレクト
+        }
+
+        const loginBtn = document.getElementById('login-btn');
+        const keyInput = document.getElementById('access-key-input');
+        const errorMsg = document.getElementById('error-msg');
+
+        async function doLogin() {
+            const key = keyInput.value.trim();
+            if (!key) return;
+
+            // クッキーにキーをセットしてリロードして検証させる
+            document.cookie = "access_key=" + key + "; path=/; max-age=31536000; SameSite=Strict";
+            
+            // 検証のためにリロード
+            window.location.reload();
+        }
+
+        loginBtn.addEventListener('click', doLogin);
+        keyInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                doLogin();
+            }
+        });
+
+        // リロード後にここに来た＝クッキーのキーが間違っていたということなのでエラー表示
+        if (document.cookie && document.cookie.includes('access_key')) {
+            errorMsg.style.display = 'block';
+        }
+    </script>
+</body>
+</html>
+"""
+        self.send_response(200)
+        self.send_header('Content-type', 'text/html; charset=utf-8')
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.end_headers()
+        self.wfile.write(login_html.encode('utf-8'))
+
     def do_GET(self):
+        # 認証チェック
+        if not self.check_auth():
+            if self.path.startswith('/search') or self.path.startswith('/proxy'):
+                self.send_response(401)
+                self.send_header('Content-type', 'application/json; charset=utf-8')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(b'{"error": "Unauthorized"}')
+            else:
+                self.send_login_html()
+            return
+
         # 静的ファイル配信 (MIMEブロック対策)
         if self.path in ('/', '/index.html'):
             try:
@@ -276,6 +459,15 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
 
     def do_POST(self):
+        # 認証チェック
+        if not self.check_auth():
+            self.send_response(401)
+            self.send_header('Content-type', 'application/json; charset=utf-8')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(b'{"error": "Unauthorized"}')
+            return
+
         if self.path == '/run-command':
             try:
                 content_length = int(self.headers['Content-Length'])
