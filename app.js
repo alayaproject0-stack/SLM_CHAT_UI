@@ -1310,10 +1310,11 @@
                     break;
                 }
 
-                // AIによるツール呼び出しタグが含まれているかチェック
-                const writeMatch = assistantResponseText.match(/<write_file\s+path="([^"]+)">([\s\S]*?)<\/write_file>/);
-                const readMatch = assistantResponseText.match(/<read_file\s+path="([^"]+)"\s*\/?>/);
-                const cmdMatch = assistantResponseText.match(/<run_command>([\s\S]*?)<\/run_command>/) || assistantResponseText.match(/<execute_command>(.*?)<\/execute_command>/s);
+                // AIによるツール呼び出しタグが含まれているかチェック (思考プロセス内も含めて検索)
+                const fullTextToSearch = (assistantResponseText || "") + "\n" + (assistantResponseReasoning || "");
+                const writeMatch = fullTextToSearch.match(/<write_file\s+path="([^"]+)">([\s\S]*?)<\/write_file>/);
+                const readMatch = fullTextToSearch.match(/<read_file\s+path="([^"]+)"\s*\/?>/);
+                const cmdMatch = fullTextToSearch.match(/<run_command>([\s\S]*?)<\/run_command>/) || fullTextToSearch.match(/<execute_command>(.*?)<\/execute_command>/s);
 
                 if (writeMatch || readMatch || cmdMatch) {
                     loopCount++;
