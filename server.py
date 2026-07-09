@@ -442,6 +442,52 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
                 self.wfile.write(json.dumps({"error": str(e)}).encode('utf-8'))
             return
 
+        elif self.path == '/install-skill':
+            try:
+                content_length = int(self.headers['Content-Length'])
+                post_data = self.rfile.read(content_length)
+                req_json = json.loads(post_data.decode('utf-8'))
+                repo_url = req_json.get('url', '').strip()
+
+                if not repo_url:
+                    self.send_response(400)
+                    self.send_header('Content-type', 'application/json; charset=utf-8')
+                    self.send_header('Access-Control-Allow-Origin', '*')
+                    self.end_headers()
+                    self.wfile.write(b'{"error": "Repository URL is empty"}')
+                    return
+
+                skills_dir = "/opt/colab-gguf-chat/skills" if os.path.exists("/opt/colab-gguf-chat") else "./skills"
+                os.makedirs(skills_dir, exist_ok=True)
+
+                folder_name = repo_url.split('/')[-1].replace('.git', '')
+                dest_path = os.path.join(skills_dir, folder_name)
+
+                import subprocess
+                if os.path.exists(dest_path):
+                    print(f"[Python Server] スキルをアップデートします: {folder_name} (git pull)", flush=True)
+                    result = subprocess.run(["git", "pull"], cwd=dest_path, capture_output=True, text=True, timeout=20)
+                else:
+                    print(f"[Python Server] スキルをインストールします: {folder_name} (git clone)", flush=True)
+                    result = subprocess.run(["git", "clone", repo_url, dest_path], capture_output=True, text=True, timeout=20)
+
+                if result.returncode != 0:
+                    raise Exception(f"Git execution failed: {result.stderr}")
+
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json; charset=utf-8')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": True, "message": f"Successfully installed/updated '{folder_name}'"}, ensure_ascii=False).encode('utf-8'))
+            except Exception as e:
+                traceback.print_exc()
+                self.send_response(500)
+                self.send_header('Content-type', 'application/json; charset=utf-8')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(e)}).encode('utf-8'))
+            return
+
         elif self.path == '/proxy/chat/completions':
             try:
                 # カスタムヘッダーの取得 (CORS回避のためのキーや接続先情報)

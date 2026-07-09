@@ -598,6 +598,20 @@
                 <div id="skills-list-container" style="background: rgba(255,255,255,0.03); border: 1px solid var(--panel-border); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 10px; max-height: 180px; overflow-y: auto;">
                     <div style="font-size: 0.8rem; color: var(--text-muted);">ロード中...</div>
                 </div>
+                
+                <!-- スキルインストールフォーム -->
+                <div style="margin-top: 10px; display: flex; flex-direction: column; gap: 6px; width: 100%;">
+                    <button type="button" id="toggle-install-form-btn" style="background: none; border: none; color: var(--accent-color); font-size: 0.8rem; cursor: pointer; text-align: left; padding: 2px 0; outline: none; display: flex; align-items: center; gap: 4px; width: fit-content; font-weight: 500;">
+                        <span>＋ GitHubからスキルをインポート</span>
+                    </button>
+                    <div id="install-form-container" style="display: none; flex-direction: column; gap: 8px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 6px; padding: 10px; width: 100%; box-sizing: border-box;">
+                        <input type="text" id="skill-install-url" placeholder="https://github.com/..." style="font-size: 0.8rem; padding: 8px; background: var(--bg-main); border: 1px solid var(--panel-border); border-radius: 4px; color: var(--text-main); width: 100%; box-sizing: border-box;">
+                        <button type="button" id="install-skill-submit-btn" style="font-size: 0.8rem; padding: 8px; background: var(--accent-color); border: none; border-radius: 4px; color: white; cursor: pointer; font-weight: 600; transition: opacity 0.2s; width: 100%; box-sizing: border-box;">
+                            インストール / 更新
+                        </button>
+                        <div id="install-status-msg" style="font-size: 0.75rem; text-align: center; display: none; word-break: break-all;"></div>
+                    </div>
+                </div>
             </div>
 
             <div class="settings-group">
@@ -1005,9 +1019,66 @@
             }
         }
 
+        // スキルのインストール機能のイベントハンドラ
+        function setupSkillInstallUI() {
+            const toggleInstallFormBtn = document.getElementById('toggle-install-form-btn');
+            const installFormContainer = document.getElementById('install-form-container');
+            const skillInstallUrl = document.getElementById('skill-install-url');
+            const installSkillSubmitBtn = document.getElementById('install-skill-submit-btn');
+            const installStatusMsg = document.getElementById('install-status-msg');
+
+            if (!toggleInstallFormBtn || !installFormContainer) return;
+
+            toggleInstallFormBtn.addEventListener('click', () => {
+                const isHidden = installFormContainer.style.display === 'none';
+                installFormContainer.style.display = isHidden ? 'flex' : 'none';
+                toggleInstallFormBtn.querySelector('span').textContent = isHidden ? 'ー インポートフォームを閉じる' : '＋ GitHubからスキルをインポート';
+            });
+
+            installSkillSubmitBtn.addEventListener('click', async () => {
+                const url = skillInstallUrl.value.trim();
+                if (!url) {
+                    alert('GitHubリポジトリのURLを入力してください。');
+                    return;
+                }
+
+                installSkillSubmitBtn.disabled = true;
+                installSkillSubmitBtn.textContent = '処理中...';
+                installStatusMsg.style.display = 'block';
+                installStatusMsg.style.color = 'var(--text-muted)';
+                installStatusMsg.textContent = '⏳ インストールまたはアップデートを実行中...';
+
+                try {
+                    const response = await fetch('/install-skill', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ url })
+                    });
+
+                    const result = await response.json();
+                    if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+
+                    installStatusMsg.style.color = '#34d399';
+                    installStatusMsg.textContent = `✅ 成功: ${result.message || 'インストール完了'}`;
+                    skillInstallUrl.value = '';
+                    
+                    // スキル一覧を再ロード
+                    await loadSkills();
+                } catch (err) {
+                    console.error(err);
+                    installStatusMsg.style.color = '#f87171';
+                    installStatusMsg.textContent = `❌ エラー: ${err.message}`;
+                } finally {
+                    installSkillSubmitBtn.disabled = false;
+                    installSkillSubmitBtn.textContent = 'インストール / 更新';
+                }
+            });
+        }
+
         // ページロード時の初期化
         window.addEventListener('load', () => {
             loadSkills();
+            setupSkillInstallUI();
             const savedProvider = localStorage.getItem('api_provider') || 'colab';
             apiProviderSelect.value = savedProvider;
             updateProviderUI(savedProvider);
