@@ -31,8 +31,54 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         super().__init__(*args, directory=BASE_DIR, **kwargs)
 
     def do_GET(self):
+        # 静的ファイル配信 (MIMEブロック対策)
+        if self.path in ('/', '/index.html'):
+            try:
+                html_path = "/opt/colab-gguf-chat/index.html" if os.path.exists("/opt/colab-gguf-chat") else "./index.html"
+                with open(html_path, 'rb') as f:
+                    content = f.read()
+                self.send_response(200)
+                self.send_header('Content-type', 'text/html; charset=utf-8')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(content)
+            except Exception as e:
+                self.send_response(404)
+                self.end_headers()
+            return
+
+        elif self.path == '/style.css':
+            try:
+                css_path = "/opt/colab-gguf-chat/style.css" if os.path.exists("/opt/colab-gguf-chat") else "./style.css"
+                with open(css_path, 'rb') as f:
+                    content = f.read()
+                self.send_response(200)
+                self.send_header('Content-type', 'text/css; charset=utf-8')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(content)
+            except Exception as e:
+                self.send_response(404)
+                self.end_headers()
+            return
+
+        elif self.path == '/app.js':
+            try:
+                js_path = "/opt/colab-gguf-chat/app.js" if os.path.exists("/opt/colab-gguf-chat") else "./app.js"
+                with open(js_path, 'rb') as f:
+                    content = f.read()
+                self.send_response(200)
+                self.send_header('Content-type', 'application/javascript; charset=utf-8')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(content)
+            except Exception as e:
+                self.send_response(404)
+                self.end_headers()
+            return
+
         # 検索中継API
-        if self.path.startswith('/search?'):
+        elif self.path.startswith('/search?'):
             try:
                 query_params = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
                 query = query_params.get('q', [''])[0]
