@@ -617,6 +617,14 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
                 try:
                     debug_body = json.loads(req_data.decode('utf-8'))
                     print(f"[Python Server Debug] 送信モデル: {debug_body.get('model')}, キー接頭辞: {api_key[:10] if api_key else 'None'}...", flush=True)
+                    
+                    # 有効スキルがシステムプロンプトに含まれているかチェックしてログ出力
+                    messages = debug_body.get('messages', [])
+                    system_msg = next((m.get('content') for m in messages if m.get('role') == 'system'), None)
+                    if system_msg and "=== 有効化されたAIスキル指示 ===" in system_msg:
+                        import re
+                        skills = re.findall(r'【スキル: (.*?)】', system_msg)
+                        print(f"[Python Server Debug] 送信メッセージに結合されたAIスキル: {skills}", flush=True)
                 except Exception:
                     pass
 

@@ -1205,6 +1205,12 @@
                     };
                 }
 
+                // デバッグログ: 送信プロンプトと有効スキルをコンソールに出力
+                console.log("[DEBUG] 送信されるシステムプロンプト全文:", systemPrompt);
+                if (skillInstructions) {
+                    console.log("[DEBUG] 注入されたAIスキル指示一覧:\n", skillInstructions);
+                }
+
                 let assistantResponseText = '';
                 let assistantResponseReasoning = '';
                 try {
