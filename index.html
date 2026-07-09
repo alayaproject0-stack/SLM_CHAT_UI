@@ -703,6 +703,15 @@
                 </label>
             </div>
 
+            <!-- エージェントモードスイッチ -->
+            <div class="switch-container">
+                <span class="switch-label" title="目標の計画・実行・検証を何度も自律ループで繰り返します">🤖 エージェントモード</span>
+                <label class="switch">
+                    <input type="checkbox" id="agent-mode-toggle">
+                    <span class="slider"></span>
+                </label>
+            </div>
+
             <!-- AIスキル設定セクション -->
             <div class="settings-group" id="skills-group">
                 <label>🔥 AIスキル設定 (指示拡張)</label>
@@ -864,6 +873,7 @@
         const modelCustomInput = document.getElementById('model-custom');
         const searchToggle = document.getElementById('web-search-toggle');
         const historyRagToggle = document.getElementById('history-rag-toggle');
+        const agentModeToggle = document.getElementById('agent-mode-toggle');
         const systemPromptInput = document.getElementById('system-prompt');
         const tempInput = document.getElementById('temperature');
         const maxTokensInput = document.getElementById('max-tokens');
@@ -1321,6 +1331,21 @@
             if (savedHistoryRag === 'true') {
                 historyRagToggle.checked = true;
             }
+            const savedAgentMode = localStorage.getItem('colab_chat_agent_mode');
+            if (savedAgentMode === 'true') {
+                agentModeToggle.checked = true;
+            }
+
+            // トグル変更時の保存処理
+            agentModeToggle.addEventListener('change', () => {
+                localStorage.setItem('colab_chat_agent_mode', agentModeToggle.checked);
+            });
+            searchToggle.addEventListener('change', () => {
+                localStorage.setItem('colab_chat_web_search', searchToggle.checked);
+            });
+            historyRagToggle.addEventListener('change', () => {
+                localStorage.setItem('colab_chat_history_rag', historyRagToggle.checked);
+            });
 
             // Colabの場合のみ、URLがあれば自動接続検証
             if (savedProvider === 'colab' && apiUrlInput.value) {
@@ -1958,12 +1983,26 @@
             tempHistory[tempHistory.length - 1] = { role: 'user', content: historyContent };
 
             let loopCount = 0;
-            const maxLoops = 3; // 無限ループ回避
+            const isAgent = agentModeToggle && agentModeToggle.checked;
+            const maxLoops = isAgent ? 10 : 3; // エージェントモード時は最大10ループ
             let isFirstTurn = true;
 
             while (loopCount < maxLoops) {
-                const assistantMsgDiv = appendMessage('assistant', '⏳ 応答待ち...');
+                const waitMsg = isAgent ? `🤖 エージェント自律実行中... (ステップ ${loopCount + 1}/${maxLoops})` : '⏳ 応答待ち...';
+                const assistantMsgDiv = appendMessage('assistant', waitMsg);
                 let systemPrompt = systemPromptInput.value.trim();
+                
+                if (isAgent) {
+                    systemPrompt += `\n\n【動作モード: エージェントモード (Google Antigravity 互換)】
+あなたは「Google Antigravity」エージェントとして動作します。
+ユーザーから開発・修正などの大きなタスク（Goal）を指示された場合、以下の「計画・実行・検証ワークフロー」を厳格に実行してください：
+
+1. [計画段階]: 最初のリターンで、作業フォルダの root に 'implementation_plan.md' ファイルを作成（または更新）し、そこに詳細な実装計画を記述してください。この時、実際のコード変更は行わず、まず計画を提示してユーザーの指示を仰ぎます。
+2. [タスク整理]: 計画が提示できたら、次に 'task.md' を作成して TODO リストを記述します。
+3. [自律実行]: 作成した TODO リストに従って、<write_file> タグを用いてファイルを直接作成・修正し、<run_command> を使ってビルドやテストを行いながら、自律的にタスクを完了させてください。進捗に応じて 'task.md' のチェックマークを更新します。
+4. [検証と報告]: 最後にテストを実行して動作を検証し、変更内容の要約を 'walkthrough.md' にまとめて完了を報告してください。`;
+                }
+
                 if (skillInstructions) {
                     systemPrompt += "\n\n=== 有効化されたAIスキル指示 ===\n" + skillInstructions + "\n================================\n";
                 }
