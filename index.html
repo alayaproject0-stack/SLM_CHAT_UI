@@ -122,7 +122,9 @@
             </div>
 
             <div class="settings-group">
-                <textarea id="system-prompt" rows="8" style="font-size:0.85rem; line-height:1.4;" placeholder="あなたは優秀なAIアシスタントです。">あなたは親切で優秀なAIアシスタントです。作業ディレクトリ内でファイル操作やコマンド実行を行いたい場合は、必ず以下のXMLタグを単独で出力してください。システムが自動で実行し、結果をあなたに差し戻します。ユーザーから「コードをファイルに保存して」「〇〇を作成して」などと指示された際は、通常のコードブロック（```）で回答するのではなく、必ず以下の &lt;write_file&gt; タグを使用して実際のファイルシステムへ書き込みを実行してください。また、Grokなどの推論思考モデルが有効な場合、思考（reasoning）の中だけでなく、必ず最終的な出力メッセージ（Content）の中にこれらのXMLタグを直接出力して記述してください。
+                <textarea id="system-prompt" rows="8" style="font-size:0.85rem; line-height:1.4;" placeholder="あなたは優秀なAIアシスタントです。">あなたは親切で優秀なAIアシスタントです。作業ディレクトリ内でファイル操作やコマンド実行を行いたい場合は、必ず以下のXMLタグを単独で出力してください。システムが自動で実行し、結果をあなたに差し戻します。ユーザーから「コードをファイルに保存して」「〇〇を作成して」などと指示された際は、通常のコードブロック（```）で回答するのではなく、必ず以下の &lt;write_file&gt; タグを使用して実際のファイルシステムへ書き込みを実行してください。また、Grokなどの推論思考モデルが有効な場合、思考（reasoning）の中だけでなく、必ず最終的な出力メッセージ（Content）の中にこれらのXMLタグを直接出力して記述してください。絶対に思考（reasoning）の出力だけで終了しないでください。
+
+【超重要警告】推論特化型モデル（grok-4.3等）を使用する場合、思考プロセス（Reasoning）の後に最終メッセージ（Content）を出力しますが、思考プロセスの中でツール実行の計画を記述して終わらせてはいけません。必ず、最終的な出力メッセージ（Content）のテキスト地の文の中に、直接上記のXMLタグ（&lt;run_command&gt;など）を漏れなく出力してください。タグを出力しないとシステムが実行できません。
 
 【利用可能なツール】
 1. ファイルの新規作成・上書き更新:
@@ -195,13 +197,19 @@
                         
                         <textarea id="chat-input" placeholder="メッセージを入力... (Ctrl + Enterで送信) またはファイルをドラッグ＆ドロップ" style="border: none; background: transparent; padding: 12px; resize: none; min-height: 60px; color: var(--text-main); font-size: 0.95rem; line-height: 1.5; outline: none;"></textarea>
                         <div class="input-footer" style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: rgba(0,0,0,0.05);">
-                            <!-- クリップ（添付）ボタン -->
-                            <button id="attach-btn" type="button" style="background: none; border: none; color: var(--text-muted); cursor: pointer; display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 50%; transition: background 0.2s, color 0.2s;">
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path>
-                                </svg>
-                            </button>
-                            <input type="file" id="file-input" style="display: none;" multiple accept="image/*,text/*,.pdf,.csv">
+                            <!-- クリップ（添付）ボタン & 続行ボタン -->
+                            <div style="display: flex; gap: 8px; align-items: center;">
+                                <button id="attach-btn" type="button" style="background: none; border: none; color: var(--text-muted); cursor: pointer; display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 50%; transition: background 0.2s, color 0.2s;">
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path>
+                                    </svg>
+                                </button>
+                                <input type="file" id="file-input" style="display: none;" multiple accept="image/*,text/*,.pdf,.csv">
+
+                                <button id="proceed-btn" type="button" style="padding: 6px 12px; font-size: 0.8rem; border-radius: 6px; display: flex; align-items: center; gap: 4px; outline: none; cursor: pointer; font-weight: 600;">
+                                    <span>▶️ 続行 (Proceed)</span>
+                                </button>
+                            </div>
                             
                             <button class="send-btn" id="send-btn">
                                 <svg viewBox="0 0 24 24">

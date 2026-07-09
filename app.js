@@ -1555,3 +1555,12 @@
             terminalInput.value = cmd;
             executeCommand(cmd);
         };
+
+        // 続行 (Proceed) ボタンのイベントリスナー
+        const proceedBtn = document.getElementById('proceed-btn');
+        if (proceedBtn) {
+            proceedBtn.addEventListener('click', () => {
+                chatInput.value = "次のステップを実行してください。";
+                sendMessage();
+            });
+        }
