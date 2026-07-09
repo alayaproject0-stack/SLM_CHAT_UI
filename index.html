@@ -552,7 +552,12 @@
             <!-- APIキー入力欄 -->
             <div class="settings-group" id="api-key-group" style="display: none;">
                 <label for="api-key">APIキー</label>
-                <input type="password" id="api-key" placeholder="APIキーを入力...">
+                <div class="password-wrapper" style="position: relative; width: 100%;">
+                    <input type="password" id="api-key" placeholder="APIキーを入力..." style="padding-right: 40px;">
+                    <button type="button" id="toggle-api-key" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 4px; display: flex; align-items: center; justify-content: center; width: auto; font-size: 1.1rem; outline: none; transition: color 0.2s;">
+                        👁️
+                    </button>
+                </div>
             </div>
 
             <div class="settings-group">
@@ -709,6 +714,14 @@
         // 設定項目
         const apiProviderSelect = document.getElementById('api-provider');
         const apiKeyInput = document.getElementById('api-key');
+        const toggleApiKeyBtn = document.getElementById('toggle-api-key');
+        if (toggleApiKeyBtn && apiKeyInput) {
+            toggleApiKeyBtn.addEventListener('click', () => {
+                const isPassword = apiKeyInput.type === 'password';
+                apiKeyInput.type = isPassword ? 'text' : 'password';
+                toggleApiKeyBtn.textContent = isPassword ? '🙈' : '👁️';
+            });
+        }
         const apiKeyGroup = document.getElementById('api-key-group');
         const apiUrlInput = document.getElementById('api-url');
         const apiUrlLabel = document.getElementById('api-url-label');
@@ -924,10 +937,13 @@
             updateProviderUI(provider);
         });
 
-        apiKeyInput.addEventListener('input', () => {
+        const saveApiKey = () => {
             const provider = apiProviderSelect.value;
             localStorage.setItem(`api_key_${provider}`, apiKeyInput.value.trim());
-        });
+        };
+        apiKeyInput.addEventListener('input', saveApiKey);
+        apiKeyInput.addEventListener('change', saveApiKey);
+        apiKeyInput.addEventListener('blur', saveApiKey);
 
         apiUrlInput.addEventListener('input', () => {
             const provider = apiProviderSelect.value;
