@@ -735,7 +735,7 @@
             </div>
 
             <div class="settings-group">
-                <textarea id="system-prompt" rows="8" style="font-size:0.85rem; line-height:1.4;" placeholder="あなたは優秀なAIアシスタントです。">あなたは親切で優秀なAIアシスタントです。作業ディレクトリ内でファイル操作やコマンド実行を行いたい場合は、必ず以下のXMLタグを単独で出力してください。システムが自動で実行し、結果をあなたに差し戻します。ユーザーから「コードをファイルに保存して」「〇〇を作成して」などと指示された際は、通常のコードブロック（```）で回答するのではなく、必ず以下の &lt;write_file&gt; タグを使用して実際のファイルシステムへ書き込みを実行してください。
+                <textarea id="system-prompt" rows="8" style="font-size:0.85rem; line-height:1.4;" placeholder="あなたは優秀なAIアシスタントです。">あなたは親切で優秀なAIアシスタントです。作業ディレクトリ内でファイル操作やコマンド実行を行いたい場合は、必ず以下のXMLタグを単独で出力してください。システムが自動で実行し、結果をあなたに差し戻します。ユーザーから「コードをファイルに保存して」「〇〇を作成して」などと指示された際は、通常のコードブロック（```）で回答するのではなく、必ず以下の &lt;write_file&gt; タグを使用して実際のファイルシステムへ書き込みを実行してください。また、Grokなどの推論思考モデルが有効な場合、思考（reasoning）の中だけでなく、必ず最終的な出力メッセージ（Content）の中にこれらのXMLタグを直接出力して記述してください。
 
 【利用可能なツール】
 1. ファイルの新規作成・上書き更新:
@@ -2050,6 +2050,7 @@
                 }
 
                 let assistantResponseText = '';
+                let assistantResponseReasoning = '';
                 try {
                     const response = await fetch(requestUrl, {
                         method: 'POST',
@@ -2094,6 +2095,7 @@
                             try {
                                 const parsed = JSON.parse(dataStr);
                                 let deltaContent = "";
+                                let deltaReasoning = "";
 
                                 if (provider === 'claude') {
                                     if (parsed.type === 'content_block_delta' && parsed.delta && parsed.delta.text) {
@@ -2102,12 +2104,29 @@
                                 } else {
                                     if (parsed.choices && parsed.choices[0] && parsed.choices[0].delta) {
                                         deltaContent = parsed.choices[0].delta.content || "";
+                                        deltaReasoning = parsed.choices[0].delta.reasoning_content || "";
                                     }
                                 }
 
+                                if (deltaReasoning) {
+                                    assistantResponseReasoning += deltaReasoning;
+                                }
                                 if (deltaContent) {
                                     assistantResponseText += deltaContent;
-                                    assistantMsgDiv.innerHTML = marked.parse(assistantResponseText);
+                                }
+
+                                if (deltaReasoning || deltaContent) {
+                                    let html = "";
+                                    if (assistantResponseReasoning) {
+                                        html += `<details open style="margin-bottom: 12px; background: rgba(255,255,255,0.02); border: 1px solid var(--panel-border); border-radius: 8px; padding: 10px;"><summary style="font-size:0.8rem; font-weight:600; color:var(--text-muted); cursor:pointer; outline:none; list-style:none; display:flex; align-items:center; gap:6px;">🧠 思考プロセス</summary><div style="font-size:0.85rem; color:var(--text-muted); font-style:italic; white-space:pre-wrap; margin-top:8px; line-height:1.5;">${assistantResponseReasoning}</div></details>`;
+                                    }
+                                    if (assistantResponseText) {
+                                        html += marked.parse(assistantResponseText);
+                                    } else if (assistantResponseReasoning) {
+                                        html += `<span style="color:var(--text-muted); font-size:0.85rem; display:inline-block; margin-top:4px;">⏳ 思考中...</span>`;
+                                    }
+
+                                    assistantMsgDiv.innerHTML = html;
                                     assistantMsgDiv.querySelectorAll('pre code').forEach((el) => {
                                         Prism.highlightElement(el);
                                     });
