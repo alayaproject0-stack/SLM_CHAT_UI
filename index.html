@@ -544,6 +544,7 @@
                     <option value="claude">Anthropic Claude</option>
                     <option value="deepseek">DeepSeek</option>
                     <option value="groq">Groq</option>
+                    <option value="grok">xAI Grok</option>
                     <option value="openrouter">OpenRouter</option>
                     <option value="custom">カスタム接続</option>
                 </select>
@@ -829,6 +830,18 @@
                     { value: 'llama-3.1-70b-versatile', text: 'llama-3.1-70b' },
                     { value: 'llama-3.1-8b-instant', text: 'llama-3.1-8b' },
                     { value: 'mixtral-8x7b-32768', text: 'mixtral-8x7b' },
+                    { value: 'custom', text: '手動入力...' }
+                ]
+            },
+            grok: {
+                url: 'https://api.x.ai/v1',
+                label: 'API URL (xAI Grok公式)',
+                placeholder: 'https://api.x.ai/v1',
+                requiresKey: true,
+                models: [
+                    { value: 'grok-2-1212', text: 'grok-2 (高性能モデル)' },
+                    { value: 'grok-2-mini-1212', text: 'grok-2-mini (高速・軽量)' },
+                    { value: 'grok-beta', text: 'grok-beta (ベータ版)' },
                     { value: 'custom', text: '手動入力...' }
                 ]
             },
