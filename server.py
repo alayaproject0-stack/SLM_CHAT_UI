@@ -610,7 +610,24 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
                     target_url = f"{base_url}/chat/completions"
                     if api_key:
                         headers["Authorization"] = f"Bearer {api_key}"
-                    req_data = post_data
+                    
+                    # OpenAI o1/o3等の推論モデル向けのサーバーサイドパラメータ補正 (ブラウザキャッシュ未クリア対策)
+                    try:
+                        req_body = json.loads(post_data.decode('utf-8'))
+                        model_name = req_body.get('model', '')
+                        if model_name and (model_name.startswith('o1') or model_name.startswith('o3')):
+                            # max_tokens を max_completion_tokens に変換
+                            if 'max_tokens' in req_body:
+                                req_body['max_completion_tokens'] = req_body.pop('max_tokens')
+                            # temperature を除外
+                            if 'temperature' in req_body:
+                                req_body.pop('temperature')
+                            req_data = json.dumps(req_body).encode('utf-8')
+                        else:
+                            req_data = post_data
+                    except Exception as pe_err:
+                        print(f"[Python Server Error] パラメータ補正失敗: {pe_err}", flush=True)
+                        req_data = post_data
 
                 # HTTPリクエストの送信
                 print(f"[Python Server] 外部APIへプロキシ中継します: {target_url} (プロバイダ: {provider})", flush=True)
