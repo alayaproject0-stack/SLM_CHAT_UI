@@ -7,6 +7,10 @@ import json
 import ssl
 import traceback
 import os
+import socket
+
+# 全てのソケット通信にデフォルトの30秒タイムアウトを設定 (無応答ハングの完全回避)
+socket.setdefaulttimeout(30)
 
 PORT = int(os.environ.get("PORT", 10200))
 
