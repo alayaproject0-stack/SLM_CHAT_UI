@@ -591,6 +591,14 @@
                 </label>
             </div>
 
+            <!-- AIスキル設定セクション -->
+            <div class="settings-group" id="skills-group">
+                <label>🔥 AIスキル設定 (指示拡張)</label>
+                <div id="skills-list-container" style="background: rgba(255,255,255,0.03); border: 1px solid var(--panel-border); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 10px; max-height: 180px; overflow-y: auto;">
+                    <div style="font-size: 0.8rem; color: var(--text-muted);">ロード中...</div>
+                </div>
+            </div>
+
             <div class="settings-group">
                 <textarea id="system-prompt" rows="8" style="font-size:0.85rem; line-height:1.4;" placeholder="あなたは優秀なAIアシスタントです。">あなたは親切で優秀なAIアシスタントです。作業ディレクトリ内でファイル操作やコマンド実行を行いたい場合は、以下のXMLタグを単独で出力してください。システムが自動で実行し、結果をあなたに差し戻します。
 
@@ -909,8 +917,84 @@
             headerModelName.textContent = selectedModel || '未設定';
         }
 
+        const skillsListContainer = document.getElementById('skills-list-container');
+        let availableSkills = [];
+
+        async function loadSkills() {
+            try {
+                const response = await fetch('/list-skills');
+                if (!response.ok) throw new Error('Failed to load skills');
+                availableSkills = await response.json();
+
+                skillsListContainer.innerHTML = '';
+                if (availableSkills.length === 0) {
+                    skillsListContainer.innerHTML = '<div style="font-size: 0.8rem; color: var(--text-muted);">利用可能なスキルはありません</div>';
+                    return;
+                }
+
+                const savedEnabledSkills = JSON.parse(localStorage.getItem('colab_chat_enabled_skills') || '[]');
+
+                availableSkills.forEach(skill => {
+                    const skillDiv = document.createElement('div');
+                    skillDiv.className = 'switch-container';
+                    skillDiv.style.margin = '0';
+                    skillDiv.style.padding = '0';
+                    skillDiv.style.border = 'none';
+                    skillDiv.style.background = 'none';
+                    skillDiv.style.display = 'flex';
+                    skillDiv.style.alignItems = 'center';
+                    skillDiv.style.justifyContent = 'space-between';
+
+                    const labelSpan = document.createElement('span');
+                    labelSpan.className = 'switch-label';
+                    labelSpan.style.fontSize = '0.85rem';
+                    labelSpan.title = skill.description;
+                    labelSpan.textContent = `⚡ ${skill.name}`;
+
+                    const switchLabel = document.createElement('label');
+                    switchLabel.className = 'switch';
+                    switchLabel.style.width = '34px';
+                    switchLabel.style.height = '20px';
+
+                    const input = document.createElement('input');
+                    input.type = 'checkbox';
+                    input.value = skill.id;
+                    input.checked = savedEnabledSkills.includes(skill.id);
+
+                    const slider = document.createElement('span');
+                    slider.className = 'slider';
+                    slider.style.borderRadius = '20px';
+
+                    input.addEventListener('change', () => {
+                        const currentEnabled = JSON.parse(localStorage.getItem('colab_chat_enabled_skills') || '[]');
+                        if (input.checked) {
+                            if (!currentEnabled.includes(skill.id)) {
+                                currentEnabled.push(skill.id);
+                            }
+                        } else {
+                            const idx = currentEnabled.indexOf(skill.id);
+                            if (idx !== -1) {
+                                currentEnabled.splice(idx, 1);
+                            }
+                        }
+                        localStorage.setItem('colab_chat_enabled_skills', JSON.stringify(currentEnabled));
+                    });
+
+                    switchLabel.appendChild(input);
+                    switchLabel.appendChild(slider);
+                    skillDiv.appendChild(labelSpan);
+                    skillDiv.appendChild(switchLabel);
+                    skillsListContainer.appendChild(skillDiv);
+                });
+            } catch (err) {
+                console.error(err);
+                skillsListContainer.innerHTML = '<div style="font-size: 0.8rem; color: #ef4444;">スキルのロードに失敗しました</div>';
+            }
+        }
+
         // ページロード時の初期化
         window.addEventListener('load', () => {
+            loadSkills();
             const savedProvider = localStorage.getItem('api_provider') || 'colab';
             apiProviderSelect.value = savedProvider;
             updateProviderUI(savedProvider);
@@ -1469,6 +1553,26 @@
                 }
             }
 
+            // 有効化されたスキルの内容を非同期でロード
+            let skillInstructions = "";
+            const enabledSkills = JSON.parse(localStorage.getItem('colab_chat_enabled_skills') || '[]');
+            if (enabledSkills.length > 0) {
+                try {
+                    const skillPromises = enabledSkills.map(async (skillId) => {
+                        const res = await fetch(`/get-skill?name=${encodeURIComponent(skillId)}`);
+                        if (res.ok) {
+                            const text = await res.text();
+                            return `\n【スキル: ${skillId}】\n${text}\n`;
+                        }
+                        return "";
+                    });
+                    const results = await Promise.all(skillPromises);
+                    skillInstructions = results.filter(t => t).join("\n");
+                } catch (e) {
+                    console.error("Skills loading failed:", e);
+                }
+            }
+
             let finalPromptText = text;
 
             // RAG: Web検索がONの場合
@@ -1544,7 +1648,10 @@
 
             while (loopCount < maxLoops) {
                 const assistantMsgDiv = appendMessage('assistant', '⏳ 応答待ち...');
-                const systemPrompt = systemPromptInput.value.trim();
+                let systemPrompt = systemPromptInput.value.trim();
+                if (skillInstructions) {
+                    systemPrompt += "\n\n=== 有効化されたAIスキル指示 ===\n" + skillInstructions + "\n================================\n";
+                }
                 const messages = [];
                 if (systemPrompt) {
                     messages.push({ role: 'system', content: systemPrompt });

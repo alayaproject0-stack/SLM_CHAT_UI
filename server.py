@@ -117,6 +117,103 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
                 err_msg = {"error": str(e)}
                 self.wfile.write(json.dumps(err_msg).encode('utf-8'))
             return
+
+        elif self.path == '/list-skills':
+            try:
+                skills_dir = "/opt/colab-gguf-chat/skills" if os.path.exists("/opt/colab-gguf-chat") else "./skills"
+                os.makedirs(skills_dir, exist_ok=True)
+                
+                # スキルフォルダが空ならデフォルトスキルを生成
+                if not os.listdir(skills_dir):
+                    self.init_default_skills(skills_dir)
+                
+                skills_list = []
+                import re
+                for entry in os.scandir(skills_dir):
+                    if entry.is_dir():
+                        skill_md_path = os.path.join(entry.path, "SKILL.md")
+                        if os.path.exists(skill_md_path):
+                            with open(skill_md_path, "r", encoding="utf-8") as sf:
+                                content = sf.read()
+                            
+                            # フロントマッターの簡易パース
+                            fm_match = re.search(r'^---\s*\n(.*?)\n---\s*\n', content, re.DOTALL | re.MULTILINE)
+                            name = entry.name
+                            description = "説明はありません。"
+                            
+                            if fm_match:
+                                fm_text = fm_match.group(1)
+                                name_line = re.search(r'^name\s*:\s*(.*?)\s*$', fm_text, re.MULTILINE)
+                                desc_line = re.search(r'^description\s*:\s*(.*?)\s*$', fm_text, re.MULTILINE)
+                                if name_line:
+                                    name = name_line.group(1).strip(" '\"")
+                                if desc_line:
+                                    description = desc_line.group(1).strip(" '\"")
+                            
+                            skills_list.append({
+                                "id": entry.name,
+                                "name": name,
+                                "description": description
+                            })
+                            
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json; charset=utf-8')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps(skills_list, ensure_ascii=False).encode('utf-8'))
+            except Exception as e:
+                traceback.print_exc()
+                self.send_response(500)
+                self.send_header('Content-type', 'application/json; charset=utf-8')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(e)}).encode('utf-8'))
+            return
+
+        elif self.path.startswith('/get-skill?'):
+            try:
+                query_params = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                skill_id = query_params.get('name', [''])[0]
+                
+                if not skill_id:
+                    self.send_response(400)
+                    self.send_header('Content-type', 'application/json; charset=utf-8')
+                    self.send_header('Access-Control-Allow-Origin', '*')
+                    self.end_headers()
+                    self.wfile.write(b'{"error": "Skill name is required"}')
+                    return
+                
+                skills_dir = "/opt/colab-gguf-chat/skills" if os.path.exists("/opt/colab-gguf-chat") else "./skills"
+                safe_dir = os.path.abspath(skills_dir)
+                skill_md_path = os.path.abspath(os.path.join(safe_dir, skill_id, "SKILL.md"))
+                
+                if not skill_md_path.startswith(safe_dir) or not os.path.exists(skill_md_path):
+                    self.send_response(404)
+                    self.send_header('Content-type', 'application/json; charset=utf-8')
+                    self.send_header('Access-Control-Allow-Origin', '*')
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"error": f"Skill '{skill_id}' not found"}).encode('utf-8'))
+                    return
+                
+                with open(skill_md_path, "r", encoding="utf-8") as sf:
+                    content = sf.read()
+                
+                import re
+                body_content = re.sub(r'^---\s*\n.*?\n---\s*\n', '', content, flags=re.DOTALL | re.MULTILINE)
+                
+                self.send_response(200)
+                self.send_header('Content-type', 'text/plain; charset=utf-8')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(body_content.encode('utf-8'))
+            except Exception as e:
+                traceback.print_exc()
+                self.send_response(500)
+                self.send_header('Content-type', 'application/json; charset=utf-8')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(e)}).encode('utf-8'))
+            return
             
         # それ以外のリクエストは通常通り静的ファイル (index.html等) を配信
         super().do_GET()
@@ -484,6 +581,43 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(json.dumps({"error": str(e)}).encode('utf-8'))
             return
+
+    def init_default_skills(self, skills_dir):
+        # 1. implementation-debug-logging
+        log_dir = os.path.join(skills_dir, "implementation-debug-logging")
+        os.makedirs(log_dir, exist_ok=True)
+        with open(os.path.join(log_dir, "SKILL.md"), "w", encoding="utf-8") as f:
+            f.write("""---
+name: implementation-debug-logging
+description: "自動デバッグログの埋め込み。コード変更時に進行状況や変数の状態を詳細に出力するログを自動的に挟み込みます。"
+---
+
+# implementation-debug-logging
+
+## 指示
+- あなたがプログラムコードを修正・作成する際、必ず実行フローの要所（関数の開始、終了、エラーキャッチ、条件分岐など）に、進行状況や変数の内容をダンプするデバッグログ（console.log や print 等、言語に適した方法）を明示的に挟み込んでください。
+- ログのプレフィックスには `[Debug]` を付与してください。
+""")
+
+        # 2. code-review
+        review_dir = os.path.join(skills_dir, "code-review")
+        os.makedirs(review_dir, exist_ok=True)
+        with open(os.path.join(review_dir, "SKILL.md"), "w", encoding="utf-8") as f:
+            f.write("""---
+name: code-review
+description: "自動コードレビュー。記述されたコードに対し、バグ、パフォーマンス、セキュリティ面での懸念点を検出し、レビューを提示します。"
+---
+
+# code-review
+
+## 指示
+- 提供されたソースコードを詳細にレビューしてください。
+- レビュー観点：
+  1. 構文エラーやロジックバグの有無
+  2. メモリリークや非効率なループなどのパフォーマンス上の懸念
+  3. SQLインジェクションやXSS、例外処理の漏れなどのセキュリティ上の欠陥
+- 指摘事項はマークダウン形式のリストで簡潔に出力してください。
+""")
         
     def search_searxng(self, query):
         # Python側から直接DuckDuckGo(HTML版)をスクレイピングして結果を取得
