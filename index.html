@@ -1716,7 +1716,21 @@
                         body: JSON.stringify(requestBody)
                     });
 
-                    if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
+                    if (!response.ok) {
+                        let detailedError = `HTTP Error: ${response.status}`;
+                        try {
+                            const errJson = await response.json();
+                            if (errJson && errJson.error) {
+                                detailedError = errJson.error;
+                            }
+                        } catch (e) {
+                            try {
+                                const errText = await response.text();
+                                if (errText) detailedError = `${detailedError} - ${errText}`;
+                            } catch (e2) {}
+                        }
+                        throw new Error(detailedError);
+                    }
 
                     const reader = response.body.getReader();
                     const decoder = new TextDecoder('utf-8');
