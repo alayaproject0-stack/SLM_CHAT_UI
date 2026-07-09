@@ -559,8 +559,8 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
                     headers["anthropic-dangerous-direct-browser-access"] = "true"
 
                     messages = req_body.get('messages', [])
-                    user_msgs = [m for m in messages if m.get('role') != 'system']
-                    system_msg = next((m.get('content') for m in messages if m.get('role') == 'system'), None)
+                    user_msgs = [m for m in messages if m.get('role') not in ('system', 'developer')]
+                    system_msg = next((m.get('content') for m in messages if m.get('role') in ('system', 'developer')), None)
 
                     # OpenAIの content 形式（配列オブジェクトまたはテキスト）の正規化
                     formatted_user_msgs = []
@@ -620,7 +620,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
                     
                     # 有効スキルがシステムプロンプトに含まれているかチェックしてログ出力
                     messages = debug_body.get('messages', [])
-                    system_msg = next((m.get('content') for m in messages if m.get('role') == 'system'), None)
+                    system_msg = next((m.get('content') for m in messages if m.get('role') in ('system', 'developer')), None)
                     if system_msg and "=== 有効化されたAIスキル指示 ===" in system_msg:
                         import re
                         skills = re.findall(r'【スキル: (.*?)】', system_msg)

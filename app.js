@@ -1175,9 +1175,13 @@
                 if (skillInstructions) {
                     systemPrompt += "\n\n=== 有効化されたAIスキル指示 ===\n" + skillInstructions + "\n================================\n";
                 }
+
+                // o1/o3シリーズなどの推論モデルの判定
+                const isO1orO3 = model && (model.startsWith('o1-') || model.startsWith('o3-') || model === 'o1');
+
                 const messages = [];
                 if (systemPrompt) {
-                    messages.push({ role: 'system', content: systemPrompt });
+                    messages.push({ role: isO1orO3 ? 'developer' : 'system', content: systemPrompt });
                 }
 
                 // エージェントモード時に、モデルに対する自律ツールのFew-shot（模範例）をインジェクション
@@ -1193,9 +1197,6 @@
                 }
 
                 messages.push(...tempHistory);
-
-                // o1/o3シリーズなどの推論モデルの判定
-                const isO1orO3 = model && (model.startsWith('o1-') || model.startsWith('o3-') || model === 'o1');
 
                 // APIリクエストのURL・ヘッダー・ペイロードの動的構築
                 let requestUrl = "";
