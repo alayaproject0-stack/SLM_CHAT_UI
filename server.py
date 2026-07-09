@@ -525,14 +525,14 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
                     method='POST'
                 )
 
-                self.send_response(200)
-                self.send_header('Content-Type', 'text/event-stream')
-                self.send_header('Cache-Control', 'no-cache')
-                self.send_header('Connection', 'keep-alive')
-                self.send_header('Access-Control-Allow-Origin', '*')
-                self.end_headers()
+                with urllib.request.urlopen(req, context=ssl_context, timeout=30) as response:
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'text/event-stream')
+                    self.send_header('Cache-Control', 'no-cache')
+                    self.send_header('Connection', 'keep-alive')
+                    self.send_header('Access-Control-Allow-Origin', '*')
+                    self.end_headers()
 
-                with urllib.request.urlopen(req, context=ssl_context) as response:
                     while True:
                         chunk = response.readline()
                         if not chunk:
