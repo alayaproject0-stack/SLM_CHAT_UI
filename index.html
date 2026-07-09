@@ -523,9 +523,120 @@
         ::-webkit-scrollbar-thumb:hover {
             background: rgba(255, 255, 255, 0.25);
         }
+
+        /* モバイル (スマホ) 対応のレスポンシブ CSS (特にPixel 10などの高解像度縦長端末用) */
+        @media (max-width: 768px) {
+            #app-container {
+                flex-direction: column;
+            }
+
+            /* サイドバーをドロワーメニュー（オーバーレイ）化 */
+            #sidebar {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 290px;
+                height: 100vh;
+                transform: translateX(-100%);
+                box-shadow: 10px 0 30px rgba(0,0,0,0.6);
+                border-right: 1px solid var(--panel-border);
+                background: rgba(10, 11, 18, 0.96);
+                z-index: 999;
+            }
+
+            /* サイドバー表示時のクラス */
+            #sidebar.open {
+                transform: translateX(0);
+            }
+
+            /* サイドバー表示時の背景オーバーレイ */
+            #sidebar-overlay {
+                display: none;
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100vw;
+                height: 100vh;
+                background: rgba(0, 0, 0, 0.55);
+                backdrop-filter: blur(5px);
+                z-index: 998;
+            }
+
+            #sidebar-overlay.active {
+                display: block;
+            }
+
+            #chat-area {
+                height: 100vh;
+                width: 100vw;
+            }
+
+            #chat-header {
+                padding: 0 16px;
+                gap: 12px;
+            }
+
+            #message-list {
+                padding: 16px;
+                gap: 16px;
+            }
+
+            .message {
+                max-width: 90%;
+                font-size: 0.9rem;
+                padding: 12px 16px;
+            }
+
+            #input-container {
+                padding: 12px 16px 24px 16px;
+            }
+
+            .input-box-wrapper {
+                border-radius: 12px;
+                padding: 6px;
+            }
+
+            #chat-input {
+                font-size: 0.95rem;
+                height: 50px;
+            }
+
+            /* ハンバーガーメニューボタンの追加用 */
+            .menu-toggle-btn {
+                display: flex !important;
+                background: none;
+                border: none;
+                color: var(--text-main);
+                cursor: pointer;
+                padding: 8px;
+                align-items: center;
+                justify-content: center;
+                border-radius: 8px;
+                border: 1px solid var(--panel-border);
+                background: rgba(255, 255, 255, 0.03);
+                font-size: 1.2rem;
+                width: 38px;
+                height: 38px;
+                outline: none;
+            }
+            
+            /* ヘッダーロゴの微調整 */
+            #chat-header h2 {
+                font-size: 1rem;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+        }
+
+        /* PC等ではハンバーガーメニューを非表示 */
+        .menu-toggle-btn {
+            display: none;
+        }
     </style>
 </head>
 <body>
+    <div id="sidebar-overlay"></div>
     <div id="app-container">
         <!-- サイドバー -->
         <aside id="sidebar">
@@ -660,6 +771,7 @@
         <!-- メインチャットエリア -->
         <main id="chat-area">
             <header id="chat-header">
+                <button type="button" class="menu-toggle-btn" id="menu-toggle">☰</button>
                 <span class="model-badge" id="header-model-name">モデル未選択</span>
                 <div class="tab-container" style="display: flex; gap: 10px; margin-left: auto;">
                     <button class="tab-btn active" id="tab-chat-btn" style="background: transparent; border: none; color: var(--text-main); font-weight: 600; font-size: 0.95rem; cursor: pointer; padding: 6px 12px; border-bottom: 2px solid var(--accent-color); transition: all 0.2s; outline: none;">💬 チャット</button>
@@ -1075,10 +1187,38 @@
             });
         }
 
+        // モバイルサイドバー（ドロワー）のトグル制御
+        function setupMobileMenuUI() {
+            const menuToggle = document.getElementById('menu-toggle');
+            const sidebar = document.getElementById('sidebar');
+            const sidebarOverlay = document.getElementById('sidebar-overlay');
+
+            if (!menuToggle || !sidebar || !sidebarOverlay) return;
+
+            function toggleSidebar() {
+                const isOpen = sidebar.classList.toggle('open');
+                sidebarOverlay.classList.toggle('active', isOpen);
+            }
+
+            function closeSidebar() {
+                sidebar.classList.remove('open');
+                sidebarOverlay.classList.remove('active');
+            }
+
+            menuToggle.addEventListener('click', toggleSidebar);
+            sidebarOverlay.addEventListener('click', closeSidebar);
+
+            // サイドバー内の項目が変更されたり、アクションが起きたときも自動で閉じる
+            apiProviderSelect.addEventListener('change', closeSidebar);
+            modelSelect.addEventListener('change', closeSidebar);
+            document.getElementById('clear-btn').addEventListener('click', closeSidebar);
+        }
+
         // ページロード時の初期化
         window.addEventListener('load', () => {
             loadSkills();
             setupSkillInstallUI();
+            setupMobileMenuUI();
             const savedProvider = localStorage.getItem('api_provider') || 'colab';
             apiProviderSelect.value = savedProvider;
             updateProviderUI(savedProvider);
