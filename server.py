@@ -564,6 +564,12 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
 
                 # HTTPリクエストの送信
                 print(f"[Python Server] 外部APIへプロキシ中継します: {target_url} (プロバイダ: {provider})", flush=True)
+                try:
+                    debug_body = json.loads(req_data.decode('utf-8'))
+                    print(f"[Python Server Debug] 送信モデル: {debug_body.get('model')}, キー接頭辞: {api_key[:10] if api_key else 'None'}...", flush=True)
+                except Exception:
+                    pass
+
                 req = urllib.request.Request(
                     target_url,
                     data=req_data,
