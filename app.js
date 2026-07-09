@@ -1176,8 +1176,8 @@
                     systemPrompt += "\n\n=== 有効化されたAIスキル指示 ===\n" + skillInstructions + "\n================================\n";
                 }
 
-                // o1/o3シリーズなどの推論モデルの判定 (正規表現でopenai/o1-miniなども安全に検知)
-                const isO1orO3 = model && (/(^|[\/-])o[13](-|$)/i.test(model));
+                // o1/o3シリーズおよびgpt-5などの最新モデルの判定 (max_tokensがサポート外のモデルを安全に検知)
+                const isO1orO3 = model && (/(^|[\/-])(o[13]|gpt-5)(-|$)/i.test(model));
 
                 const messages = [];
                 if (systemPrompt) {
