@@ -212,6 +212,21 @@
             transform: translateY(-1px);
         }
 
+        #cancel-btn {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.4);
+            color: #fca5a5;
+            box-shadow: 0 2px 8px rgba(239, 68, 68, 0.1);
+            transition: all 0.2s ease;
+        }
+
+        #cancel-btn:hover {
+            background: rgba(239, 68, 68, 0.2);
+            border-color: rgba(239, 68, 68, 0.7);
+            box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+            transform: translateY(-1px);
+        }
+
         /* 接続ステータスインジケータ */
         #status-indicator {
             display: flex;

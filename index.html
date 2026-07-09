@@ -195,7 +195,7 @@
                         <!-- 添付ファイルのプレビューコンテナ -->
                         <div id="preview-container" style="display: none; flex-wrap: wrap; gap: 8px; padding: 8px 12px; background: rgba(0,0,0,0.15); border-bottom: 1px solid rgba(255,255,255,0.05); max-height: 120px; overflow-y: auto;"></div>
                         
-                        <textarea id="chat-input" placeholder="メッセージを入力... (Ctrl + Enterで送信) またはファイルをドラッグ＆ドロップ" style="border: none; background: transparent; padding: 12px; resize: none; min-height: 60px; color: var(--text-main); font-size: 0.95rem; line-height: 1.5; outline: none;"></textarea>
+                        <textarea id="chat-input" placeholder="メッセージを入力... (Enterで送信、Shift+Enterで改行) またはファイルをドラッグ＆ドロップ" style="border: none; background: transparent; padding: 12px; resize: none; min-height: 60px; color: var(--text-main); font-size: 0.95rem; line-height: 1.5; outline: none;"></textarea>
                         <div class="input-footer" style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: rgba(0,0,0,0.05);">
                             <!-- クリップ（添付）ボタン & 続行ボタン -->
                             <div style="display: flex; gap: 8px; align-items: center;">
@@ -208,6 +208,10 @@
 
                                 <button id="proceed-btn" type="button" style="padding: 6px 12px; font-size: 0.8rem; border-radius: 6px; display: flex; align-items: center; gap: 4px; outline: none; cursor: pointer; font-weight: 600;">
                                     <span>▶️ 続行 (Proceed)</span>
+                                </button>
+
+                                <button id="cancel-btn" type="button" style="padding: 6px 12px; font-size: 0.8rem; border-radius: 6px; display: none; align-items: center; gap: 4px; outline: none; cursor: pointer; font-weight: 600;">
+                                    <span>🛑 中断 (Cancel)</span>
                                 </button>
                             </div>
                             

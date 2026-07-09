@@ -33,6 +33,10 @@
         const fileInput = document.getElementById('file-input');
         const previewContainer = document.getElementById('preview-container');
 
+        // 生成中断用の制御変数
+        let currentAbortController = null;
+        let isCancelled = false;
+
         // 添付ファイルを保持する配列
         let attachedFiles = [];
         // PDF.jsのワーカー設定
@@ -282,6 +286,14 @@
                 console.error(err);
                 skillsListContainer.innerHTML = '<div style="font-size: 0.8rem; color: #ef4444;">スキルのロードに失敗しました</div>';
             }
+        }
+
+        // 送信・生成中UIの初期化とリセット
+        function resetGeneratingUI() {
+            const cancelBtn = document.getElementById('cancel-btn');
+            if (cancelBtn) cancelBtn.style.display = 'none';
+            if (sendBtn) sendBtn.disabled = false;
+            currentAbortController = null;
         }
 
         // スキルのインストール機能のイベントハンドラ
@@ -990,8 +1002,18 @@
                 return;
             }
 
-            chatInput.value = '';
-            chatInput.style.height = '60px';
+            // AbortControllerおよびキャンセルフラグの初期化
+            isCancelled = false;
+            currentAbortController = new AbortController();
+            
+            // キャンセルボタンを表示し、送信ボタンを非活性化
+            const cancelBtn = document.getElementById('cancel-btn');
+            if (cancelBtn) cancelBtn.style.display = 'flex';
+            if (sendBtn) sendBtn.disabled = true;
+
+            try {
+                chatInput.value = '';
+                chatInput.style.height = '60px';
 
             const currentFiles = [...attachedFiles];
             attachedFiles = [];
@@ -1131,6 +1153,10 @@
             let isFirstTurn = true;
 
             while (loopCount < maxLoops) {
+                if (isCancelled) {
+                    appendMessage('assistant', '🛑 処理がユーザーによって中断されました。');
+                    break;
+                }
                 const waitMsg = isAgent ? `🤖 エージェント自律実行中... (ステップ ${loopCount + 1}/${maxLoops})` : '⏳ 応答待ち...';
                 const assistantMsgDiv = appendMessage('assistant', waitMsg);
                 let systemPrompt = systemPromptInput.value.trim();
@@ -1168,41 +1194,40 @@
 
                 messages.push(...tempHistory);
 
+                // o1/o3シリーズなどの推論モデルの判定
+                const isO1orO3 = model && (model.startsWith('o1-') || model.startsWith('o3-') || model === 'o1');
+
                 // APIリクエストのURL・ヘッダー・ペイロードの動的構築
                 let requestUrl = "";
                 const headers = { 'Content-Type': 'application/json' };
                 let requestBody = {};
                 let baseCleanUrl = baseUrl.replace(/\/$/, "");
 
-                // Colab (ローカルLLM) は中継接続のため直接フェッチ
-                // それ以外のクラウドプロバイダはCORS回避のためサーバーの /proxy/chat/completions を経由する
                 if (provider === 'colab') {
                     if (!baseCleanUrl.endsWith('/v1')) {
                         requestUrl = `${baseCleanUrl}/v1/chat/completions`;
                     } else {
                         requestUrl = `${baseCleanUrl}/chat/completions`;
                     }
-
-                    requestBody = {
-                        model: model,
-                        messages: messages,
-                        temperature: parseFloat(tempInput.value) || 0.5,
-                        max_tokens: parseInt(maxTokensInput.value) || 2048,
-                        stream: true
-                    };
                 } else {
                     requestUrl = "/proxy/chat/completions";
                     headers['X-Provider'] = provider;
                     headers['X-Api-Key'] = apiKey;
                     headers['X-Base-Url'] = baseCleanUrl;
+                }
 
-                    requestBody = {
-                        model: model,
-                        messages: messages,
-                        temperature: parseFloat(tempInput.value) || 0.5,
-                        max_tokens: parseInt(maxTokensInput.value) || 2048,
-                        stream: true
-                    };
+                requestBody = {
+                    model: model,
+                    messages: messages,
+                    stream: true
+                };
+
+                if (isO1orO3) {
+                    // o1/o3モデルでは max_tokens がサポート外のため max_completion_tokens を使用
+                    requestBody.max_completion_tokens = parseInt(maxTokensInput.value) || 2048;
+                } else {
+                    requestBody.temperature = parseFloat(tempInput.value) || 0.5;
+                    requestBody.max_tokens = parseInt(maxTokensInput.value) || 2048;
                 }
 
                 // デバッグログ: 送信プロンプトと有効スキルをコンソールに出力
@@ -1217,7 +1242,8 @@
                     const response = await fetch(requestUrl, {
                         method: 'POST',
                         headers: headers,
-                        body: JSON.stringify(requestBody)
+                        body: JSON.stringify(requestBody),
+                        signal: currentAbortController ? currentAbortController.signal : undefined
                     });
 
                     if (!response.ok) {
@@ -1313,6 +1339,11 @@
                 } catch (err) {
                     console.error(err);
                     assistantMsgDiv.innerHTML = `<span style="color:var(--danger-color)">❌ エラーが発生しました: ${err.message}</span>`;
+                    break;
+                }
+
+                if (isCancelled) {
+                    appendMessage('assistant', '🛑 処理がユーザーによって中断されました。');
                     break;
                 }
 
@@ -1448,13 +1479,16 @@
             
             // 会話履歴をサーバーに自動保存
             await saveHistoryToServer();
+            } finally {
+                resetGeneratingUI();
+            }
         }
 
         // イベントリスナー
         sendBtn.addEventListener('click', sendMessage);
 
         chatInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' && e.ctrlKey) {
+            if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 sendMessage();
             }
@@ -1569,5 +1603,17 @@
             proceedBtn.addEventListener('click', () => {
                 chatInput.value = "次のステップを実行してください。";
                 sendMessage();
+            });
+        }
+
+        // 中断 (Cancel) ボタンのイベントリスナー
+        const cancelBtn = document.getElementById('cancel-btn');
+        if (cancelBtn) {
+            cancelBtn.addEventListener('click', () => {
+                isCancelled = true;
+                if (currentAbortController) {
+                    currentAbortController.abort();
+                }
+                resetGeneratingUI();
             });
         }
