@@ -593,6 +593,14 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
                         chunk = response.readline()
                         if not chunk:
                             break
+
+                        # 生データ受信デバッグ
+                        try:
+                            decoded_line = chunk.decode('utf-8', errors='ignore').strip()
+                            if decoded_line:
+                                print(f"[Python Server Stream Debug] 受信行: {decoded_line}", flush=True)
+                        except Exception:
+                            pass
                         
                         if provider == 'claude':
                             line = chunk.decode('utf-8').strip()
