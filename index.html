@@ -2010,6 +2010,19 @@
                 if (systemPrompt) {
                     messages.push({ role: 'system', content: systemPrompt });
                 }
+
+                // エージェントモード時に、モデルに対する自律ツールのFew-shot（模範例）をインジェクション
+                if (isAgent) {
+                    messages.push(
+                        { role: 'user', content: "作業フォルダに hello.py を作成して実行してください。" },
+                        { role: 'assistant', content: `<write_file path="hello.py">\nprint("Hello World")\n</write_file>` },
+                        { role: 'user', content: "[システム] ファイル hello.py の書き込みが完了しました。" },
+                        { role: 'assistant', content: `<run_command>\npython hello.py\n</run_command>` },
+                        { role: 'user', content: "[システム] コマンド実行結果: 終了コード: 0\n[STDOUT]\nHello World\n" },
+                        { role: 'assistant', content: "hello.py ファイルの作成と実行が完了しました。出力結果は 'Hello World' です。" }
+                    );
+                }
+
                 messages.push(...tempHistory);
 
                 // APIリクエストのURL・ヘッダー・ペイロードの動的構築
