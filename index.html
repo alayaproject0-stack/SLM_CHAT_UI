@@ -726,7 +726,7 @@
             </div>
 
             <div class="settings-group">
-                <textarea id="system-prompt" rows="8" style="font-size:0.85rem; line-height:1.4;" placeholder="あなたは優秀なAIアシスタントです。">あなたは親切で優秀なAIアシスタントです。作業ディレクトリ内でファイル操作やコマンド実行を行いたい場合は、以下のXMLタグを単独で出力してください。システムが自動で実行し、結果をあなたに差し戻します。
+                <textarea id="system-prompt" rows="8" style="font-size:0.85rem; line-height:1.4;" placeholder="あなたは優秀なAIアシスタントです。">あなたは親切で優秀なAIアシスタントです。作業ディレクトリ内でファイル操作やコマンド実行を行いたい場合は、必ず以下のXMLタグを単独で出力してください。システムが自動で実行し、結果をあなたに差し戻します。ユーザーから「コードをファイルに保存して」「〇〇を作成して」などと指示された際は、通常のコードブロック（```）で回答するのではなく、必ず以下の &lt;write_file&gt; タグを使用して実際のファイルシステムへ書き込みを実行してください。
 
 【利用可能なツール】
 1. ファイルの新規作成・上書き更新:
@@ -1214,6 +1214,96 @@
             document.getElementById('clear-btn').addEventListener('click', closeSidebar);
         }
 
+        // コードブロックの右上に「💾 サーバーへ保存」ボタンを追加する
+        function addSaveButtonsToCodeBlocks(containerDiv) {
+            const preElements = containerDiv.querySelectorAll('pre');
+            preElements.forEach((pre) => {
+                if (pre.querySelector('.save-code-btn')) return;
+
+                pre.style.position = 'relative';
+
+                const saveBtn = document.createElement('button');
+                saveBtn.type = 'button';
+                saveBtn.className = 'save-code-btn';
+                saveBtn.innerHTML = `
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:12px; height:12px; margin-right: 4px; display:inline-block; vertical-align:middle; stroke: #f3f4f6;"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+                    <span>保存</span>
+                `;
+                
+                saveBtn.style.position = 'absolute';
+                saveBtn.style.top = '8px';
+                saveBtn.style.right = '8px';
+                saveBtn.style.background = 'rgba(30, 41, 59, 0.85)';
+                saveBtn.style.border = '1px solid rgba(255, 255, 255, 0.12)';
+                saveBtn.style.borderRadius = '4px';
+                saveBtn.style.color = '#f3f4f6';
+                saveBtn.style.padding = '4px 8px';
+                saveBtn.style.fontSize = '0.75rem';
+                saveBtn.style.cursor = 'pointer';
+                saveBtn.style.display = 'flex';
+                saveBtn.style.alignItems = 'center';
+                saveBtn.style.zIndex = '10';
+                saveBtn.style.transition = 'all 0.2s';
+                saveBtn.style.outline = 'none';
+
+                saveBtn.addEventListener('mouseenter', () => {
+                    saveBtn.style.background = '#4f46e5';
+                    saveBtn.style.borderColor = '#6366f1';
+                });
+                saveBtn.addEventListener('mouseleave', () => {
+                    saveBtn.style.background = 'rgba(30, 41, 59, 0.85)';
+                    saveBtn.style.borderColor = 'rgba(255, 255, 255, 0.12)';
+                });
+
+                saveBtn.addEventListener('click', async () => {
+                    const code = pre.querySelector('code').textContent;
+                    
+                    const filePath = prompt("保存先のファイル名（例: src/index.js または test.py）を入力してください。\n※サーバーの作業フォルダ内に保存されます。", "");
+                    
+                    if (filePath === null) return;
+                    if (!filePath.trim()) {
+                        alert("パスを入力してください。");
+                        return;
+                    }
+
+                    saveBtn.disabled = true;
+                    saveBtn.querySelector('span').textContent = '保存中...';
+
+                    try {
+                        const res = await fetch('/write-file', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                path: filePath.trim(),
+                                content: code
+                            })
+                        });
+
+                        const result = await res.json();
+                        if (!res.ok) throw new Error(result.error || `HTTP ${res.status}`);
+
+                        saveBtn.style.background = '#10b981';
+                        saveBtn.style.borderColor = '#10b981';
+                        saveBtn.querySelector('span').textContent = '✅ 保存完了!';
+                        setTimeout(() => {
+                            saveBtn.style.background = 'rgba(30, 41, 59, 0.85)';
+                            saveBtn.style.borderColor = 'rgba(255, 255, 255, 0.12)';
+                            saveBtn.querySelector('span').textContent = '保存';
+                        }, 2500);
+
+                    } catch (err) {
+                        console.error(err);
+                        alert(`保存に失敗しました: ${err.message}`);
+                        saveBtn.querySelector('span').textContent = '保存';
+                    } finally {
+                        saveBtn.disabled = false;
+                    }
+                });
+
+                pre.appendChild(saveBtn);
+            });
+        }
+
         // ページロード時の初期化
         window.addEventListener('load', () => {
             loadSkills();
@@ -1481,6 +1571,7 @@
                 message.querySelectorAll('pre code').forEach((el) => {
                     Prism.highlightElement(el);
                 });
+                addSaveButtonsToCodeBlocks(message);
             } else {
                 message.textContent = text;
             }
@@ -1986,6 +2077,9 @@
                             } catch (e) {}
                         }
                     }
+
+                    // ストリーミング完了後にコードブロックに保存ボタンを付与
+                    addSaveButtonsToCodeBlocks(assistantMsgDiv);
 
                     // 履歴に追加
                     tempHistory.push({ role: 'assistant', content: assistantResponseText });
