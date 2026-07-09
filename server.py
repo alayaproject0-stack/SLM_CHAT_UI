@@ -614,8 +614,9 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
                     # OpenAI o1/o3等の推論モデル向けのサーバーサイドパラメータ補正 (ブラウザキャッシュ未クリア対策)
                     try:
                         req_body = json.loads(post_data.decode('utf-8'))
-                        model_name = req_body.get('model', '')
-                        if model_name and (model_name.startswith('o1') or model_name.startswith('o3')):
+                        model_name = req_body.get('model', '').lower()
+                        import re
+                        if model_name and re.search(r'(^|[\/-])o[13](-|$)', model_name):
                             # max_tokens を max_completion_tokens に変換
                             if 'max_tokens' in req_body:
                                 req_body['max_completion_tokens'] = req_body.pop('max_tokens')
